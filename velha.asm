@@ -17,14 +17,15 @@ reserved        .rs 2       ; Reserved for nes use.
 countFrames     .rs 1       ; Counter number of frames 
 framesBlink     .rs 1       ; Next Number Frame for Blink (framesBlink = countFrames+#BPMBLINK)
 framesInput     .rs 1       ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
-p0InputControl  .rs 1       ; Control Press by Player 0 (A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
-p1InputControl  .rs 1       ; Control Press by Player 1 (A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
+p0InputControl  .rs 1       ; Control Press by Player 0 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
+p1InputControl  .rs 1       ; Control Press by Player 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
 usoGeral        .rs 1       ; Use for stand by data and aux in multiplication method
 pontSimbols     .rs 2       ; Pointer for simbols (LSB,MSB) (Little Endian)
 pontGeral       .rs 2       ; Pointer for use generic (LSB,MSB) (Little Endian)
 simbols         .rs 9       ; vector contaim tile of ever positon of table game 
 turn            .rs 1       ; turn of P0 = 1, P1 = 2, Over = 3
 choose          .rs 1       ; Blank Position for next player start option
+winner          .rs 1       ; Winner P0 = 1, P1 = 2, Drawn = 3
 
 ;===================  Code Segment   =============================
     .code
@@ -37,30 +38,32 @@ choose          .rs 1       ; Blank Position for next player start option
 ;    modify sprites data and compute the game.
 ;===========================================================================
 NMI:
+    ; Print string of turn player
+    jsr PrintTurnPlayer
     ; Call DMA-Sprite
     lda #$02
     sta $4014
     lda #$0
     sta $2006
     sta $2006
-    ; Get Input Control Players.
-    jsr InitControl
-    ; Move "cursor" in screen by input control
-    jsr MoveChoosePlayer
-    ; Select choose 
-    jsr SetChoosePlayer
     ; Blink the selected position to play
     jsr BlinkChoose
     ; Update Sprites (Blink, Position set, Game over, etc..)
     jsr UpdateSprites
+    ; Get Input Control Players.
+    jsr InitControl
+    ; Select choose 
+    jsr SetChoosePlayer
+    ; Move "cursor" in screen by input control
+    jsr MoveChoosePlayer
     ; reset game after some winner
     jsr ResetGame
+    inc countFrames
     ; Set Control Register 
     lda #%10001000
     sta $2000
     lda #%00011110
     sta $2001
-    inc countFrames
     rti
 
 ;=======================  Enter Point CPU  ================================
@@ -102,6 +105,8 @@ WaitVblank2:
 ;======================= Set Variables =============================
     lda #1
     sta turn
+    lda #3
+    sta winner
 ;===================================================================
 ;   Load Sprites Palettes colors, and BackGrid (Grid Table)
     jsr LoadPalettes
@@ -116,6 +121,8 @@ WaitVblank2:
     sta $4014
     lda #%10001000
     sta $2000
+    lda #%00011110
+    sta $2001
     ; Forever loop, do nothing, waint for a vblank and a NMI call
 ForeverLoop:
     nop
@@ -321,13 +328,13 @@ setTimeValid:
     ldy choose
     lda turn
     sta simbols,y
-    eor #3
     ; Swap Turn
+    eor #3
     sta turn
+    jsr VerifyGame
     ; Get new blank position
     jsr FirstClear
     ; Verify end game 
-    jsr VerifyGame
     lda #SPEEDREADINPUT
     sta framesInput
 outSetChoosePlayer:
@@ -415,9 +422,11 @@ outChoosePlayer:
     rts
 
 ;===================================================================
-;  Verify end game (winer or Draw)
-;
+;  Verify end game (winer)
+;       obs: future optimal code (more generic)
 VerifyGame:
+    lda turn
+    pha
     lda simbols
     cmp #0
     beq LV2
@@ -522,6 +531,15 @@ LH3:
     sta simbols+8
     jmp outVerifyGame
 outVerifyGame:
+    lda turn 
+    cmp #3
+    bne outWins
+    pla
+    eor #3
+    sta winner
+    rts
+outWins:
+    pla
     rts
 
 ;===================================================================
@@ -549,8 +567,102 @@ loopReset:
     sta simbols-1,x
     dex
     bne loopReset
+    lda #3
+    sta winner
     jsr FirstClear
 outResetGame:
+    rts
+;===================================================================
+;  Print string turn
+;
+PrintTurnPlayer:
+    lda turn
+    cmp #3
+    beq endGame
+    bit $2002
+    lda #$20
+    sta $2006
+    lda #$A8
+    sta $2006
+    ldx #0
+    stx $2007
+loopTurn:
+    lda StringTurn,x
+    sta $2007
+    inx
+    cpx #12
+    bcc loopTurn
+    jsr PrintPlayerNumber
+    rts
+endGame:
+    lda winner
+    cmp #3
+    beq drawn
+    jsr PrintPlayerWinner
+    rts
+drawn:
+    jsr PrintDrawn
+    rts
+
+;===================================================================
+;  Print Number Player 
+;
+PrintPlayerNumber:
+    bit $2002
+    lda #$20
+    sta $2006
+    lda #$B5
+    sta $2006
+    lda #17
+    clc 
+    adc turn
+    sta $2007
+    lda #0
+    sta $2007
+    rts
+
+;===================================================================
+;  Print string Winner
+;
+PrintPlayerWinner:
+    bit $2002
+    lda #$20
+    sta $2006
+    lda #$A8
+    sta $2006
+    ldx #0
+loopWinner:
+    lda StringWinner,X
+    sta $2007
+    inx
+    cpx #14
+    bcc loopWinner
+    lda #17
+    clc 
+    adc winner
+    sta $2007
+    rts
+;===================================================================
+;  Print string of drawn
+;
+PrintDrawn:
+    bit $2002
+    lda #$20
+    sta $2006
+    lda #$A8
+    sta $2006
+    ldx #0
+    stx $2007
+    stx $2007
+loopDrawn:
+    lda StringDrawn,x
+    sta $2007
+    inx
+    cpx #10
+    bcc loopDrawn
+    lda #0
+    sta $2007
+    sta $2007
     rts
 ;===================================================================
 ;  Print Grid (BackGround)
@@ -682,6 +794,15 @@ Sprites:
 ; Label used for auto calculate bytes for write in memory := (EndSprites-Sprites) Bytes
 EndSprites:
 ;===================================================================
+;  String msgs
+;
+StringTurn:
+    .byte 14,15,13,11,0,12,9,4,17,6,13,0        ; "TURN PLAYER "
+StringWinner:
+    .byte 16,8,11,11,6,13,0,12,9,4,17,6,13,0    ; "WINNER PLAYER "
+StringDrawn:
+    .byte 5,13,4,16,11,0,7,4,10,6               ; "DRAWN GAME"
+;===================================================================
 ;  Palettes Color data
 ;
 palettes:
@@ -756,6 +877,166 @@ palettes:
             $11111111,\
             $00111100,\
             $00111100
+
+    ; Tile 4: A
+    .defchr $00111000,\
+            $01101100,\
+            $11000110,\
+            $11000110,\
+            $11111110,\
+            $11000110,\
+            $11000110,\
+            $00000000
+    
+    ; Tile 5: D
+    .defchr $11111000,\
+            $11001100,\
+            $11000110,\
+            $11000110,\
+            $11000110,\
+            $11001100,\
+            $11111000,\
+            $00000000
+
+    ; Tile 6: E
+    .defchr $11111110,\
+            $11000000,\
+            $11000000,\
+            $11111100,\
+            $11000000,\
+            $11000000,\
+            $11111110,\
+            $00000000
+
+    ; Tile 7: G
+    .defchr $00111110,\
+            $01100000,\
+            $11000000,\
+            $11001110,\
+            $11000110,\
+            $01100110,\
+            $00111110,\
+            $00000000
+
+    ; Tile 8: I
+    .defchr $01111110,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $01111110,\
+            $00000000
+
+    ; Tile 9: L
+    .defchr $01100000,\
+            $01100000,\
+            $01100000,\
+            $01100000,\
+            $01100000,\
+            $01100000,\
+            $01111110,\
+            $00000000
+
+    ; Tile 10: M
+    .defchr $11000110,\
+            $11101110,\
+            $11111110,\
+            $11111110,\
+            $11010110,\
+            $11000110,\
+            $11000110,\
+            $00000000
+
+    ; Tile 11: N
+    .defchr $11000110,\
+            $11100110,\
+            $11110110,\
+            $11111110,\
+            $11011110,\
+            $11001110,\
+            $11000110,\
+            $00000000
+
+    ; Tile 12: P
+    .defchr $11111100,\
+            $11000110,\
+            $11000110,\
+            $11000110,\
+            $11111100,\
+            $11000000,\
+            $11000000,\
+            $00000000
+
+    ; Tile 13: R
+    .defchr $11111100,\
+            $11000110,\
+            $11000110,\
+            $11001110,\
+            $11111000,\
+            $11011100,\
+            $11001110,\
+            $00000000
+    
+    ; Tile 14: T
+    .defchr $01111110,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $00000000
+
+    ; Tile 15: U
+    .defchr $11000110,\
+            $11000110,\
+            $11000110,\
+            $11000110,\
+            $11000110,\
+            $11000110,\
+            $01111100,\
+            $00000000
+    
+    ; Tile 16: W
+    .defchr $11000110,\
+            $11000110,\
+            $11010110,\
+            $11111110,\
+            $11111110,\
+            $11101110,\
+            $11000110,\
+            $00000000
+
+    ; Tile 17: Y
+    .defchr $011000110,\
+            $011000110,\
+            $011000110,\
+            $001111100,\
+            $000111000,\
+            $000111000,\
+            $000111000,\
+            $000000000
+
+    ; Tile 18: 1
+    .defchr $00011000,\
+            $00111000,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $00011000,\
+            $01111110,\
+            $00000000
+
+    ; Tile 19: 2
+    .defchr $01111100,\
+            $11000110,\
+            $00001110,\
+            $00111100,\
+            $01111000,\
+            $11100000,\
+            $11111110,\
+            $00000000
 
     .org $1000  
     ; Tile 0: Blank
