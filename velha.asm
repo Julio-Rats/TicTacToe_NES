@@ -38,18 +38,18 @@ winner          .rs 1       ; Winner P0 = 1, P1 = 2, Drawn = 3
 ;    modify sprites data and compute the game.
 ;===========================================================================
 NMI:
-    ; Print string of turn player
-    jsr PrintTurnPlayer
     ; Call DMA-Sprite
     lda #$02
     sta $4014
+    ; Print string of turn player
+    jsr PrintTurnPlayer
     lda #$0
     sta $2006
     sta $2006
     ; Blink the selected position to play
     jsr BlinkChoose
     ; Update Sprites (Blink, Position set, Game over, etc..)
-    jsr UpdateSprites
+    jsr UpdateSprites 
     ; Get Input Control Players.
     jsr InitControl
     ; Select choose 
@@ -59,7 +59,6 @@ NMI:
     ; reset game after some winner
     jsr ResetGame
     inc countFrames
-    ; Set Control Register 
     lda #%10001000
     sta $2000
     lda #%00011110
@@ -104,9 +103,9 @@ WaitVblank2:
     bpl WaitVblank2
 ;======================= Set Variables =============================
     lda #1
-    sta turn
+    sta turn        ; Player 1 ever start
     lda #3
-    sta winner
+    sta winner      ; assuming a possible tie
 ;===================================================================
 ;   Load Sprites Palettes colors, and BackGrid (Grid Table)
     jsr LoadPalettes
@@ -121,8 +120,6 @@ WaitVblank2:
     sta $4014
     lda #%10001000
     sta $2000
-    lda #%00011110
-    sta $2001
     ; Forever loop, do nothing, waint for a vblank and a NMI call
 ForeverLoop:
     nop
@@ -452,7 +449,7 @@ DiagMain:  ; diagonal main
     sta simbols+4
     sta simbols+8
     jmp outVerifyGame
-LV1: ; Line Vertical 1
+LV1:    ; Line Vertical 1
     cmp simbols+3
     bne LV2
     cmp simbols+6
@@ -463,7 +460,7 @@ LV1: ; Line Vertical 1
     sta simbols+3
     sta simbols+6
     jmp outVerifyGame
-LV2: ; Line Vertical 2
+LV2:    ; Line Vertical 2
     lda simbols+1
     cmp #0
     beq LV3
@@ -477,7 +474,7 @@ LV2: ; Line Vertical 2
     sta simbols+4
     sta simbols+7
     jmp outVerifyGame
-LV3:
+LV3:    ; Line Vertical 2
     lda simbols+2
     cmp #0
     beq LH2
@@ -491,7 +488,7 @@ LV3:
     sta simbols+5
     sta simbols+8
     jmp outVerifyGame
-DiagSec:
+DiagSec:    ; Diagonal Secondary
     cmp simbols+4
     bne LH2
     cmp simbols+6
@@ -502,7 +499,7 @@ DiagSec:
     sta simbols+4
     sta simbols+6
     jmp outVerifyGame
-LH2:
+LH2:    ; Line Horizon 2
     lda simbols+3
     cmp #0
     beq LH3
@@ -516,7 +513,7 @@ LH2:
     sta simbols+4
     sta simbols+5
     jmp outVerifyGame
-LH3:
+LH3:   ; Line Horizon 3
     lda simbols+6
     cmp #0
     beq outVerifyGame
@@ -531,6 +528,7 @@ LH3:
     sta simbols+8
     jmp outVerifyGame
 outVerifyGame:
+    ; Set a player winner
     lda turn 
     cmp #3
     bne outWins
