@@ -271,6 +271,8 @@ loopFirstClear:
     inx
     cpx #9
     bne loopFirstClear
+    lda #3
+    sta turn
 find:
     stx choose
     rts
