@@ -304,7 +304,6 @@ BlinkChoose:
 outBlinkChoose:
     rts
 
-
 ;===================================================================
 ;  Select Choose Player
 ;  
@@ -570,6 +569,7 @@ loopReset:
     jsr FirstClear
 outResetGame:
     rts
+    
 ;===================================================================
 ;  Print string turn
 ;
@@ -640,6 +640,7 @@ loopWinner:
     adc winner
     sta $2007
     rts
+    
 ;===================================================================
 ;  Print string of drawn
 ;
@@ -662,6 +663,7 @@ loopDrawn:
     sta $2007
     sta $2007
     rts
+    
 ;===================================================================
 ;  Print Grid (BackGround)
 ;
