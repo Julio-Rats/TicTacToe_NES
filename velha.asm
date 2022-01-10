@@ -311,7 +311,6 @@ SetChoosePlayer:
     lda framesInput
     cmp #0
     beq setTimeValid
-    ;dec framesInput ; MoveChoosePlayer decrement
     jmp outSetChoosePlayer
 setTimeValid:
     ldx turn
@@ -330,7 +329,6 @@ setTimeValid:
     jsr VerifyGame
     ; Get new blank position
     jsr FirstClear
-    ; Verify end game 
     lda #SPEEDREADINPUT
     sta framesInput
 outSetChoosePlayer:
