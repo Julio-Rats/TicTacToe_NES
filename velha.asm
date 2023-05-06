@@ -5,8 +5,19 @@
   .inesmir 0      ; BCG Horizontal Mirroring
 
 ;===================  Constants   =============================
-BPMBLINK       = (3600/160)     ; bpm blink choose
+BPMBLINK       = (3600/180)     ; bpm blink choose
 SPEEDREADINPUT = 20             ; frames to cooldown control input
+
+;===================  PPU Registers  ==========================
+PPUCTRL   = $2000
+PPUMASK   = $2001
+PPUSTATUS = $2002
+OAMADDR	  = $2003
+OAMDATA   = $2004
+PPUSCROLL = $2005
+PPUADDR   = $2006
+PPUDATA   = $2007
+OAMDMA    = $4014
 
 ;===================  variables   =============================
 ; Variaveis (RAM Interna do NES)
@@ -27,7 +38,7 @@ turn            .rs 1       ; turn of P0 = 1, P1 = 2, Over = 3
 choose          .rs 1       ; Blank Position for next player start option
 winner          .rs 1       ; Winner P0 = 1, P1 = 2, Drawn = 3
 
-;===================  Code Segment   =============================
+;===================  Code Segment   ============================
     .code
     ; Start bank code (CPU $8000-$BFFF) Mirrored to (CPU $C000-$FFFF)
     .bank 0
@@ -40,12 +51,12 @@ winner          .rs 1       ; Winner P0 = 1, P1 = 2, Drawn = 3
 NMI:
     ; Call DMA-Sprite
     lda #$02
-    sta $4014
+    sta OAMDMA
     ; Print string of turn player
     jsr PrintTurnPlayer
     lda #$0
-    sta $2006
-    sta $2006
+    sta PPUADDR
+    sta PPUADDR
     ; Blink the selected position to play
     jsr BlinkChoose
     ; Update Sprites (Blink, Position set, Game over, etc..)
@@ -60,9 +71,9 @@ NMI:
     jsr ResetGame
     inc countFrames
     lda #%10001000
-    sta $2000
+    sta PPUCTRL
     lda #%00011110
-    sta $2001
+    sta PPUMASK
     rti
 
 ;=======================  Enter Point CPU  ================================
@@ -76,13 +87,13 @@ Reset:
     txs
     inx
     ; Disable graphics and sound
-    stx $2000       ; No NMI Call
-    stx $2001       ; No rendering
+    stx PPUCTRL     ; No NMI Call
+    stx PPUMASK     ; No rendering
     stx $4010       ; No sound
     stx $4017       ; NTSC 60Hz
     ; Waint for new frame
 WaitVblank1:
-    bit $2002
+    bit PPUSTATUS
     bpl WaitVblank1
     ; Clear Memory Inside NES ($0000-$07FF) Mirrored to ($0800-$1FFF)
     lda #0
@@ -99,7 +110,7 @@ ClearMemory:
     bne ClearMemory
     ; Waint again for new frame
 WaitVblank2:
-    bit $2002
+    bit PPUSTATUS
     bpl WaitVblank2
 ;======================= Set Variables =============================
     lda #1
@@ -117,9 +128,9 @@ WaitVblank2:
     jsr FirstClear
     ; Load DMA for input sprites inside VRAM (PPU Memory)
     lda #$02
-    sta $4014
+    sta OAMDMA
     lda #%10001000
-    sta $2000
+    sta PPUCTRL
     ; Forever loop, do nothing, waint for a vblank and a NMI call
 ForeverLoop:
     nop
@@ -129,14 +140,14 @@ ForeverLoop:
 ;   Load Palettes colors
 ;
 LoadPalettes:
-    bit $2002
+    bit PPUSTATUS
     lda #$3F
-    sta $2006
+    sta PPUADDR
     ldx #$00
-    stx $2006
+    stx PPUADDR
 loopPalettes:
     lda palettes, x
-    sta $2007
+    sta PPUDATA
     inx
     cpx #32
     bne loopPalettes
@@ -575,16 +586,16 @@ PrintTurnPlayer:
     lda turn
     cmp #3
     beq endGame
-    bit $2002
+    bit PPUSTATUS
     lda #$20
-    sta $2006
+    sta PPUADDR
     lda #$A8
-    sta $2006
+    sta PPUADDR
     ldx #0
-    stx $2007
+    stx PPUDATA
 loopTurn:
     lda StringTurn,x
-    sta $2007
+    sta PPUDATA
     inx
     cpx #12
     bcc loopTurn
@@ -604,84 +615,84 @@ drawn:
 ;  Print Number Player 
 ;
 PrintPlayerNumber:
-    bit $2002
+    bit PPUSTATUS
     lda #$20
-    sta $2006
+    sta PPUADDR
     lda #$B5
-    sta $2006
+    sta PPUADDR
     lda #17
     clc 
     adc turn
-    sta $2007
+    sta PPUDATA
     lda #0
-    sta $2007
+    sta PPUDATA
     rts
 
 ;===================================================================
 ;  Print string Winner
 ;
 PrintPlayerWinner:
-    bit $2002
+    bit PPUSTATUS
     lda #$20
-    sta $2006
+    sta PPUADDR
     lda #$A8
-    sta $2006
+    sta PPUADDR
     ldx #0
 loopWinner:
     lda StringWinner,X
-    sta $2007
+    sta PPUDATA
     inx
     cpx #14
     bcc loopWinner
     lda #17
     clc 
     adc winner
-    sta $2007
+    sta PPUDATA
     rts
     
 ;===================================================================
 ;  Print string of drawn
 ;
 PrintDrawn:
-    bit $2002
+    bit PPUSTATUS
     lda #$20
-    sta $2006
+    sta PPUADDR
     lda #$A8
-    sta $2006
+    sta PPUADDR
     ldx #0
-    stx $2007
-    stx $2007
+    stx PPUDATA
+    stx PPUDATA
 loopDrawn:
     lda StringDrawn,x
-    sta $2007
+    sta PPUDATA
     inx
     cpx #10
     bcc loopDrawn
     lda #0
-    sta $2007
-    sta $2007
+    sta PPUDATA
+    sta PPUDATA
     rts
 ;===================================================================
 ;  Print String Created
 ;
 PrintCreated:
-    bit $2002
+    bit PPUSTATUS
     lda #$23
-    sta $2006
+    sta PPUADDR
     lda #$23
-    sta $2006
+    sta PPUADDR
     ldx #0
-    stx $2007
-    stx $2007
+    stx PPUDATA
+    stx PPUDATA
 loopCreated:
     lda StringCreated,x
-    sta $2007
+    sta PPUDATA
     inx
     cpx #20
     bcc loopCreated
     lda #0
-    sta $2007
-    sta $2007
+    sta PPUDATA
+    sta PPUDATA
     rts
 ;===================================================================
 ;  Print Grid (BackGround)
@@ -690,76 +701,76 @@ PrintGrid:
     ldx #14 
     ldy #2 
     lda #$04 
-    sta $2000
-    bit $2002
+    sta PPUCTRL
+    bit PPUSTATUS
     lda #$21
-    sta $2006
+    sta PPUADDR
     lda #$0C
-    sta $2006
+    sta PPUADDR
     lda #1 
 LoopColuns:
-    sta $2007 
+    sta PPUDATA 
     dex
     bne LoopColuns
-    bit $2002
+    bit PPUSTATUS
     lda #$21
-    sta $2006
+    sta PPUADDR
     lda #$11
-    sta $2006
+    sta PPUADDR
     lda #1
     ldx #14
     dey
     bne LoopColuns
 
     lda #$00 
-    sta $2000
+    sta PPUCTRL
     ldx #14 
     ldy #2 
-    bit $2002
+    bit PPUSTATUS
     lda #$21
-    sta $2006
+    sta PPUADDR
     lda #$88
-    sta $2006
+    sta PPUADDR
     lda #2 
 LoopRows:
-    sta $2007 
+    sta PPUDATA 
     dex
     bne LoopRows
-    bit $2002
+    bit PPUSTATUS
     lda #$22
-    sta $2006
+    sta PPUADDR
     lda #$28
-    sta $2006
+    sta PPUADDR
     lda #2
     ldx #14
     dey
     bne LoopRows  
 
     ldx #3
-    bit $2002
+    bit PPUSTATUS
     lda #$21
-    sta $2006
+    sta PPUADDR
     lda #$8C
-    sta $2006
-    stx $2007
-    bit $2002
+    sta PPUADDR
+    stx PPUDATA
+    bit PPUSTATUS
     lda #$21
-    sta $2006
+    sta PPUADDR
     lda #$91
-    sta $2006
-    stx $2007
-    bit $2002
+    sta PPUADDR
+    stx PPUDATA
+    bit PPUSTATUS
     lda #$22
-    sta $2006
+    sta PPUADDR
     lda #$2C
-    sta $2006
-    stx $2007
-    bit $2002
+    sta PPUADDR
+    stx PPUDATA
+    bit PPUSTATUS
     lda #$22
-    sta $2006
+    sta PPUADDR
     lda #$31
-    sta $2006
-    stx $2007
+    sta PPUADDR
+    stx PPUDATA
     jsr PrintCreated
     rts
 
@@ -767,50 +778,50 @@ LoopRows:
 ;  Print Grid (BackGround)
 ;
 Sprites:
-    .byte 80,2,%10000000,74
-    .byte 80,2,%11000000,82
-    .byte 72,2,%00000000,74
-    .byte 72,2,%01000000,82
+    .byte 80,0,%10000000,74
+    .byte 80,0,%11000000,82
+    .byte 72,0,%00000000,74
+    .byte 72,0,%01000000,82
 
-    .byte 80,2,%10000000,112
-    .byte 80,2,%11000000,120
-    .byte 72,2,%00000000,112
-    .byte 72,2,%01000000,120
+    .byte 80,0,%10000000,112
+    .byte 80,0,%11000000,120
+    .byte 72,0,%00000000,112
+    .byte 72,0,%01000000,120
 
-    .byte 80,1,%10000000,152
-    .byte 80,1,%11000000,160
-    .byte 72,1,%00000000,152
-    .byte 72,1,%01000000,160
+    .byte 80,0,%10000000,152
+    .byte 80,0,%11000000,160
+    .byte 72,0,%00000000,152
+    .byte 72,0,%01000000,160
     ;
-    .byte 118,1,%10000000,74
-    .byte 118,1,%11000000,82
-    .byte 110,1,%00000000,74
-    .byte 110,1,%01000000,82
+    .byte 118,0,%10000000,74
+    .byte 118,0,%11000000,82
+    .byte 110,0,%00000000,74
+    .byte 110,0,%01000000,82
 
-    .byte 118,1,%10000000,112
-    .byte 118,1,%11000000,120
-    .byte 110,1,%00000000,112
-    .byte 110,1,%01000000,120
+    .byte 118,0,%10000000,112
+    .byte 118,0,%11000000,120
+    .byte 110,0,%00000000,112
+    .byte 110,0,%01000000,120
 
-    .byte 118,2,%10000000,152
-    .byte 118,2,%11000000,160
-    .byte 110,2,%00000000,152
-    .byte 110,2,%01000000,160
+    .byte 118,0,%10000000,152
+    .byte 118,0,%11000000,160
+    .byte 110,0,%00000000,152
+    .byte 110,0,%01000000,160
     ;
-    .byte 158,3,%10000000,74
-    .byte 158,3,%11000000,82
-    .byte 150,3,%00000000,74
-    .byte 150,3,%01000000,82
+    .byte 158,0,%10000000,74
+    .byte 158,0,%11000000,82
+    .byte 150,0,%00000000,74
+    .byte 150,0,%01000000,82
 
-    .byte 158,1,%10000000,112
-    .byte 158,1,%11000000,120
-    .byte 150,1,%00000000,112
-    .byte 150,1,%01000000,120
+    .byte 158,0,%10000000,112
+    .byte 158,0,%11000000,120
+    .byte 150,0,%00000000,112
+    .byte 150,0,%01000000,120
 
-    .byte 158,1,%10000000,152
-    .byte 158,1,%11000000,160
-    .byte 150,1,%00000000,152
-    .byte 150,1,%01000000,160
+    .byte 158,0,%10000000,152
+    .byte 158,0,%11000000,160
+    .byte 150,0,%00000000,152
+    .byte 150,0,%01000000,160
 ; Label used for auto calculate bytes for write in memory := (EndSprites-Sprites) Bytes
 EndSprites:
 ;===================================================================
