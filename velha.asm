@@ -1,8 +1,8 @@
-  ; iNES header identifier
-  .inesprg 1      ; 1x 16KB PRG code
-  .ineschr 1      ; 1x  8KB CHR data
-  .inesmap 0      ; Mapper 0 = NROM, no bank swapping
-  .inesmir 0      ; BCG Horizontal Mirroring
+; iNES header identifier
+    .inesprg 1      ; 1x 16KB PRG code
+    .ineschr 1      ; 1x  8KB CHR data
+    .inesmap 0      ; Mapper 0 = NROM, no bank swapping
+    .inesmir 0      ; BCG Horizontal Mirroring
 
 ;===================  Constants   =============================
 BPMBLINK       = (3600/180)     ; bpm blink choose
@@ -22,7 +22,7 @@ OAMDMA    = $4014
 ;===================  variables   =============================
 ; Variaveis (RAM Interna do NES)
 ; ---> Zero Page used here ! $00--$FF (256 Bytes Free RAM) <---
-  .zp
+    .zp
 
 reserved        .rs 2       ; Reserved for nes use.
 countFrames     .rs 1       ; Counter number of frames 
