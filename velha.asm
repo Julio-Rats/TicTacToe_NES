@@ -1,53 +1,53 @@
-; iNES header identifier
+;============================= iNES header identifier =============================
     .inesprg 1      ; 1x 16KB PRG code
     .ineschr 1      ; 1x  8KB CHR data
     .inesmap 0      ; Mapper 0 = NROM, no bank swapping
     .inesmir 0      ; BCG Horizontal Mirroring
 
-;===================  Constants   =============================
-BPMBLINK       = (3600/180)     ; bpm blink choose
-SPEEDREADINPUT = 20             ; frames to cooldown control input
+;=============================  Constants  =============================
+BPMBLINK       = (3600/180)  ; bpm blink choose (3600/BPM*2), exemple (3600/180) equal 90 bpm blink choose.
+SPEEDREADINPUT = 12          ; frames to cooldown control input
 
-;===================  PPU Registers  ==========================
-PPUCTRL   = $2000
-PPUMASK   = $2001
-PPUSTATUS = $2002
-OAMADDR	  = $2003
-OAMDATA   = $2004
-PPUSCROLL = $2005
-PPUADDR   = $2006
-PPUDATA   = $2007
-OAMDMA    = $4014
+;=============================  PPU Registers  =============================
+PPUCTRL   = $2000   ; Controller 
+PPUMASK   = $2001   ; Mask 
+PPUSTATUS = $2002   ; Status 
+OAMADDR	  = $2003   ; OAM address
+OAMDATA   = $2004   ; OAM data
+PPUSCROLL = $2005   ; Scroll 
+PPUADDR   = $2006   ; PPU Address 
+PPUDATA   = $2007   ; PPU Data 
+OAMDMA    = $4014   ; OAM DMA 
 
-;===================  variables   =============================
+;=============================  variables   =============================
 ; Variaveis (RAM Interna do NES)
 ; ---> Zero Page used here ! $00--$FF (256 Bytes Free RAM) <---
     .zp
 
-reserved        .rs 2       ; Reserved for nes use.
-countFrames     .rs 1       ; Counter number of frames 
-framesBlink     .rs 1       ; Next Number Frame for Blink (framesBlink = countFrames+#BPMBLINK)
-framesInput     .rs 1       ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
-p0InputControl  .rs 1       ; Control Press by Player 0 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
-p1InputControl  .rs 1       ; Control Press by Player 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
-usoGeral        .rs 1       ; Use for stand by data and aux in multiplication method
-pontSimbols     .rs 2       ; Pointer for simbols (LSB,MSB) (Little Endian)
-pontGeral       .rs 2       ; Pointer for use generic (LSB,MSB) (Little Endian)
-simbols         .rs 9       ; vector contaim tile of ever positon of table game 
-turn            .rs 1       ; turn of P0 = 1, P1 = 2, Over = 3
-choose          .rs 1       ; Blank Position for next player start option
-winner          .rs 1       ; Winner P0 = 1, P1 = 2, Drawn = 3
+reserved        .rs 2   ; Reserved for nes use.
+countFrames     .rs 1   ; Counter number of frames 
+framesBlink     .rs 1   ; Next Number Frame for Blink (framesBlink = countFrames+#BPMBLINK)
+framesInput     .rs 1   ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
+p0InputControl  .rs 1   ; Control Press by Player 0 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
+p1InputControl  .rs 1   ; Control Press by Player 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
+usoGeral        .rs 1   ; Use for stand by data and aux in multiplication method
+pontSimbols     .rs 2   ; Pointer for simbols (LSB,MSB) (Little Endian)
+pontGeral       .rs 2   ; Pointer for use generic (LSB,MSB) (Little Endian)
+simbols         .rs 9   ; vector contaim tile of ever positon of table game 
+turn            .rs 1   ; turn of P0 = 1, P1 = 2, Over = 3
+choose          .rs 1   ; Blank Position for next player start option
+winner          .rs 1   ; Winner P0 = 1, P1 = 2, Drawn = 3
 
-;===================  Code Segment   ============================
+;=============================  Code Segment   =============================
     .code
-    ; Start bank code (CPU $8000-$BFFF) Mirrored to (CPU $C000-$FFFF)
+     ; Start bank code (CPU $8000-$BFFF) Mirrored to (CPU $C000-$FFFF)
     .bank 0
     .org $8000
 
-;===================  Non Maskable Interrupt   =============================
+;=============================  Non Maskable Interrupt   =============================
 ;   Vblank generated a NMI(Non Maskable Interrupt), this period is used to 
 ;    modify sprites data and compute the game.
-;===========================================================================
+;===================================================================
 NMI:
     ; Call DMA-Sprite
     lda #$02
@@ -76,10 +76,10 @@ NMI:
     sta PPUMASK
     rti
 
-;=======================  Enter Point CPU  ================================
+;=============================  Enter Point CPU  =============================
 ;   Boot game, this is enter point of CPU (start of code game)
-;===========================================================================
-Reset:
+;===================================================================
+Boot:
     sei
     cld 
     ; Set Stack Ponter
@@ -112,7 +112,7 @@ ClearMemory:
 WaitVblank2:
     bit PPUSTATUS
     bpl WaitVblank2
-;======================= Set Variables =============================
+;============================= Set Variables =============================
     lda #1
     sta turn        ; Player 1 ever start
     lda #3
@@ -122,8 +122,6 @@ WaitVblank2:
     jsr LoadPalettes
     jsr LoadSprites
     jsr PrintGrid
-    ; Take a blank table (new game)
-    jsr UpdateSprites
     ; Take first position clear (this case first position table (new game))
     jsr FirstClear
     ; Load DMA for input sprites inside VRAM (PPU Memory)
@@ -162,7 +160,7 @@ LoopSprites:
     lda Sprites,x
     sta $0200,x
     inx
-    cpx #144
+    cpx #(EndSprites-Sprites)
     bne LoopSprites
     rts
 
@@ -171,25 +169,16 @@ LoopSprites:
 ;
 InitControl:
     lda #$01
-    sta p0InputControl
     sta p1InputControl
     sta $4016
     lda #$00
     sta $4016 
-    clc
 loopReadControl:
     lda $4016
-    and #1
-    beq P0Release
-    sec
-P0Release: 
+    lsr a
     rol p0InputControl
-    clc
     lda $4017
-    and #1
-    beq P1Release
-    sec
-P1Release:
+    lsr a
     rol p1InputControl
     bcc loopReadControl
     rts
@@ -200,78 +189,19 @@ P1Release:
 UpdateSprites:
     ldy #0
     ldx #0
-    lda #low(simbols)
-    sta pontSimbols
-    lda #high(simbols)
-    sta pontSimbols+1
 LoopPrint:
-    lda [pontSimbols],y
-    jsr PrintSimbols
-    iny
-    cpy #3
-    bne LoopPrint
-    inc pontSimbols
-    inc pontSimbols
-    inc pontSimbols
-    ldy #0
-    inx
-    cpx #3
-    bne LoopPrint
-    rts
-
-;===================================================================
-;  Use in UpdateSprites
-;
-PrintSimbols:
-    sta usoGeral ;->
-    txa
-    pha ;save X
-    tya
-    pha ;save y
-    lda usoGeral ;<-
-    pha ;save A
-    lda #48
-    jsr Mult    
-    pha ; -.-
-    tya
-    tax
-    lda #16
-    jsr Mult  
-    sta usoGeral
-    pla ; -^-
-    clc
-    adc usoGeral
-    tax
-    pla ;load A
+    lda simbols,y
     sta $0201,x
     sta $0205,x
     sta $0209,x
     sta $020D,x
-
-    pla ;load y
-    tay
-    pla ;load X
+    txa
+    clc 
+    adc #16
     tax
-    rts
-
-;===================================================================
-;  Mult value in Register A with Register X, save in A
-;
-Mult:
-    dex
-    sta usoGeral
-    cpx #0
-    beq Multout   ; x = 1 
-    cpx #$FF        
-    bne LoopMult  ; x != 0
-    lda #0
-    jmp Multout
-LoopMult:
-    clc
-    adc usoGeral
-    dex
-    bne LoopMult
-Multout:
+    iny
+    cpy #9
+    bne LoopPrint
     rts
 
 ;===================================================================
@@ -281,7 +211,6 @@ FirstClear:
     ldx #0
 loopFirstClear:
     lda simbols,x
-    cmp #0
     beq find
     inx
     cpx #9
@@ -320,7 +249,6 @@ outBlinkChoose:
 ;  
 SetChoosePlayer:
     lda framesInput
-    cmp #0
     beq setTimeValid
     jmp outSetChoosePlayer
 setTimeValid:
@@ -350,7 +278,6 @@ outSetChoosePlayer:
 ;   
 MoveChoosePlayer:
     lda framesInput
-    cmp #0
     beq moveTimeValid
     dec framesInput
     jmp outChoosePlayer
@@ -414,7 +341,6 @@ moveChoose:
     cpy #9
     bcs outChoosePlayer
     lda simbols,y  
-    cmp #0
     beq validPosition
     jmp [pontGeral]
 validPosition:
@@ -433,7 +359,6 @@ VerifyGame:
     lda turn
     pha
     lda simbols
-    cmp #0
     beq LV2
     ; line horizon 1    
     cmp simbols+1
@@ -470,7 +395,6 @@ LV1:    ; Line Vertical 1
     jmp outVerifyGame
 LV2:    ; Line Vertical 2
     lda simbols+1
-    cmp #0
     beq LV3
     cmp simbols+4
     bne LV3
@@ -484,7 +408,6 @@ LV2:    ; Line Vertical 2
     jmp outVerifyGame
 LV3:    ; Line Vertical 2
     lda simbols+2
-    cmp #0
     beq LH2
     cmp simbols+5
     bne DiagSec
@@ -509,7 +432,6 @@ DiagSec:    ; Diagonal Secondary
     jmp outVerifyGame
 LH2:    ; Line Horizon 2
     lda simbols+3
-    cmp #0
     beq LH3
     cmp simbols+4
     bne LH3
@@ -523,7 +445,6 @@ LH2:    ; Line Horizon 2
     jmp outVerifyGame
 LH3:   ; Line Horizon 3
     lda simbols+6
-    cmp #0
     beq outVerifyGame
     cmp simbols+7
     bne outVerifyGame
@@ -557,12 +478,12 @@ ResetGame:
     bne outResetGame
     lda p0InputControl
     and #%00010000
-    bne reset
+    bne Reset
     lda p1InputControl
     and #%00010000
-    bne reset
+    bne Reset
     jmp outResetGame
-reset:
+Reset:
     lda #0
     ldy #1
     ldx #9
@@ -721,7 +642,6 @@ LoopColuns:
     ldx #14
     dey
     bne LoopColuns
-
     lda #$00 
     sta PPUCTRL
     ldx #14 
@@ -745,7 +665,6 @@ LoopRows:
     ldx #14
     dey
     bne LoopRows  
-
     ldx #3
     bit PPUSTATUS
     lda #$21
@@ -774,6 +693,8 @@ LoopRows:
     jsr PrintCreated
     rts
 
+IRQ:
+    rti
 ;===================================================================
 ;  Print Grid (BackGround)
 ;
@@ -822,8 +743,9 @@ Sprites:
     .byte 158,0,%11000000,160
     .byte 150,0,%00000000,152
     .byte 150,0,%01000000,160
-; Label used for auto calculate bytes for write in memory := (EndSprites-Sprites) Bytes
 EndSprites:
+    ; Label used for auto calculate bytes for write in memory := (EndSprites-Sprites) Bytes
+
 ;===================================================================
 ;  String msgs
 ;
@@ -834,7 +756,8 @@ StringWinner:
 StringDrawn:
     .byte 5,13,4,16,11,0,7,4,10,6               ; "DRAWN GAME"
 StringCreated:
-    .byte 21,13,6,4,14,6,5,0,20,17,0,22,15,9,8,23,0,21,10,21;CREATED BY JULIO CMC
+    .byte 21,13,6,4,14,6,5,0,20,17,0,22,15,9,8,23,0,21,10,21 ; "CREATED BY JULIO CMC"
+
 ;===================================================================
 ;  Palettes Color data
 ;
@@ -856,6 +779,7 @@ palettes:
     .byte $02, $03, $04
     .byte $02
     .byte $05, $06, $07
+
 ;===================================================================
 ;  Bank of vectors input address memory
 ;
@@ -863,8 +787,9 @@ palettes:
     .org $FFFA
 
     .dw NMI     ; Non Maskable Interrupt
-    .dw Reset   ; Enter Point Address Code
-    .dw NMI     ; Vectos interrupt (not use)
+    .dw Boot    ; Enter Point Address Code
+    .dw IRQ     ; Vectos interrupt (not use)
+
 ;===================================================================
 ;  Bank of CHR memory (VRAM $0000-$1FFF)
 ;
@@ -1087,8 +1012,9 @@ palettes:
             $11000110,\
             $01111100,\
             $00000000
-;====================================================================================
-;====================================================================================
+
+;===================================================================
+;===================================================================
     .org $1000  
     ; Tile 0: Blank
     .defchr $00000000,\
