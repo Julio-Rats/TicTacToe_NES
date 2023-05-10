@@ -28,9 +28,8 @@ reserved        .rs 2   ; Reserved for nes use.
 countFrames     .rs 1   ; Counter number of frames 
 framesBlink     .rs 1   ; Next Number Frame for Blink (framesBlink = countFrames+#BPMBLINK)
 framesInput     .rs 1   ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
-p0InputControl  .rs 1   ; Control Press by Player 0 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
-p1InputControl  .rs 1   ; Control Press by Player 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
-pontGeral       .rs 2   ; Pointer for use generic (LSB,MSB) (Big Endian)
+InputControl    .rs 2   ; Control Press by Player 0 and 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
+moveDirPonter   .rs 2   ; Pointer use for repeat same move (LSB,MSB) (Big Endian)
 simbols         .rs 9   ; vector contaim tile of ever positon of table game 
 turn            .rs 1   ; turn of P0 = 1, P1 = 2, Over = 3
 choose          .rs 1   ; Blank Position for next player start option
@@ -57,16 +56,16 @@ NMI:
     ; Update Sprites (Blink, Position set, Game over, etc..)
     jsr UpdateSprites 
     ; Get Input Control Players.
-    jsr InitControl
-    ; Select choose 
-    jsr SetChoosePlayer
+    jsr GetInputControl
     ; Move "cursor" in screen by input control
     jsr MoveChoosePlayer
-    ; reset game after some winner
-    jsr ResetGame
+    ; Select choose 
+    jsr SetChoosePlayer
+    ; Reset game after some winner
+    jsr ResetEndGame
     ;  Increment Count Frame and Decrement framesInput
     jsr ChangeCounts
-    lda #0
+    lda #$00
     sta PPUADDR
     sta PPUADDR
     rti
@@ -91,7 +90,7 @@ WaitVblank1:
     bit PPUSTATUS
     bpl WaitVblank1
     ; Clear Memory Inside NES ($0000-$07FF) Mirrored to ($0800-$1FFF)
-    lda #0
+    lda #$00
 ClearMemory:
     sta $0000,x
     sta $0100,x
@@ -108,9 +107,9 @@ WaitVblank2:
     bit PPUSTATUS
     bpl WaitVblank2
 ;============================= Set Variables =============================
-    lda #1
+    lda #$01
     sta turn        ; Player 1 ever start
-    lda #3
+    lda #$03
     sta winner      ; assuming a possible tie
 ;===================================================================
 ;   Load Sprites Palettes colors, and BackGrid (Grid Table)
@@ -141,10 +140,10 @@ LoadPalettes:
     ldx #$00
     stx PPUADDR
 loopPalettes:
-    lda palettes, x
+    lda Palettes, x
     sta PPUDATA
     inx
-    cpx #32
+    cpx #(EndPalettes-Palettes)
     bne loopPalettes
     rts
 
@@ -152,7 +151,7 @@ loopPalettes:
 ;   Load Sprites
 ;
 LoadSprites:
-    ldx #0
+    ldx #$00
 LoopSprites:
     lda Sprites,x
     sta $0200,x
@@ -164,19 +163,19 @@ LoopSprites:
 ;===================================================================
 ;  Read Control Players
 ;
-InitControl:
+GetInputControl:
     lda #$01
-    sta p1InputControl
+    sta InputControl+1
     sta $4016
     lda #$00
     sta $4016 
 loopReadControl:
     lda $4016
     lsr a
-    rol p0InputControl
+    rol InputControl
     lda $4017
     lsr a
-    rol p1InputControl
+    rol InputControl+1
     bcc loopReadControl
     rts
 
@@ -184,8 +183,8 @@ loopReadControl:
 ;  Update Sprites (Modify DMA zone $0200-$02FF)
 ;
 UpdateSprites:
-    ldy #0
-    ldx #0
+    ldy #$00
+    ldx #$00
 LoopPrint:
     lda simbols,y
     sta $0201,x
@@ -194,10 +193,10 @@ LoopPrint:
     sta $020D,x
     txa
     clc 
-    adc #16
+    adc #$10
     tax
     iny
-    cpy #9
+    cpy #$09
     bne LoopPrint
     rts
 
@@ -205,14 +204,14 @@ LoopPrint:
 ;  Get first position Clear, count by rows and coluns
 ;
 FirstClear:
-    ldx #0
+    ldx #$00
 loopFirstClear:
     lda simbols,x
     beq find
     inx
-    cpx #9
+    cpx #$09
     bne loopFirstClear
-    lda #3
+    lda #$03
     sta turn
 find:
     stx choose
@@ -234,10 +233,10 @@ NoDecInput:
 ;
 BlinkChoose:
     lda turn
-    cmp #3
+    cmp #$03
     beq outBlinkChoose
     lda choose 
-    cmp #9
+    cmp #$09
     beq outBlinkChoose
     lda countFrames
     cmp framesBlink
@@ -261,17 +260,17 @@ SetChoosePlayer:
     jmp outSetChoosePlayer
 setTimeValid:
     ldx turn
-    cpx #3
+    cpx #$03
     beq outSetChoosePlayer
     dex
-    lda p0InputControl,x
+    lda InputControl,x
     and #%10000000
     beq outSetChoosePlayer
     ldy choose
     lda turn
     sta simbols,y
     ; Swap Turn
-    eor #3
+    eor #$03
     sta turn
     jsr VerifyGame
     ; Get new blank position
@@ -290,66 +289,66 @@ MoveChoosePlayer:
     jmp outChoosePlayer
 moveTimeValid:
     ldy choose
-    cpy #9
+    cpy #$09
     beq outChoosePlayer
     ldx turn
-    cpx #3
+    cpx #$03
     beq outChoosePlayer
     dex
-    lda p0InputControl,x
+    lda InputControl,x
     and #%00001000        ; UP
     beq tryDown
     lda #low(UP)
-    sta pontGeral
+    sta moveDirPonter
     lda #high(UP)
-    sta pontGeral+1
+    sta moveDirPonter+1
 UP:
     dey
     dey
     dey
     jmp moveChoose
 tryDown:
-    lda p0InputControl,x
+    lda InputControl,x
     and #%00000100        ; DOWN
     beq tryLeft
     lda #low(DOWN)
-    sta pontGeral
+    sta moveDirPonter
     lda #high(DOWN)
-    sta pontGeral+1
+    sta moveDirPonter+1
 DOWN:
     iny
     iny
     iny
     jmp moveChoose
 tryLeft:
-    lda p0InputControl,x
+    lda InputControl,x
     and #%00000010        ; LEFT
     beq tryRight
     lda #low(LEFT)
-    sta pontGeral
+    sta moveDirPonter
     lda #high(LEFT)
-    sta pontGeral+1
+    sta moveDirPonter+1
 LEFT:
     dey
     jmp moveChoose
 tryRight:
-    lda p0InputControl,x
+    lda InputControl,x
     and #%00000001        ; RIGHT
     beq outChoosePlayer
     lda #low(RIGHT)
-    sta pontGeral
+    sta moveDirPonter
     lda #high(RIGHT)
-    sta pontGeral+1
+    sta moveDirPonter+1
 RIGHT:
     iny
 moveChoose:
-    cpy #0
+    cpy #$00
     bcc outChoosePlayer
-    cpy #9
+    cpy #$09
     bcs outChoosePlayer
     lda simbols,y  
     beq validPosition
-    jmp [pontGeral]
+    jmp [moveDirPonter]
 validPosition:
     ldx choose
     sta simbols,x
@@ -372,7 +371,7 @@ VerifyGame:
     bne DiagMain
     cmp simbols+2
     bne DiagMain
-    lda #3
+    lda #$03
     sta turn
     sta simbols
     sta simbols+1
@@ -383,7 +382,7 @@ DiagMain:  ; diagonal main
     bne LV1
     cmp simbols+8
     bne LV1
-    lda #3
+    lda #$03
     sta turn
     sta simbols
     sta simbols+4
@@ -394,7 +393,7 @@ LV1:    ; Line Vertical 1
     bne LV2
     cmp simbols+6
     bne LV2
-    lda #3
+    lda #$03
     sta turn
     sta simbols
     sta simbols+3
@@ -407,7 +406,7 @@ LV2:    ; Line Vertical 2
     bne LV3
     cmp simbols+7
     bne LV3
-    lda #3
+    lda #$03
     sta turn
     sta simbols+1
     sta simbols+4
@@ -420,7 +419,7 @@ LV3:    ; Line Vertical 2
     bne DiagSec
     cmp simbols+8
     bne DiagSec
-    lda #3
+    lda #$03
     sta turn
     sta simbols+2
     sta simbols+5
@@ -431,7 +430,7 @@ DiagSec:    ; Diagonal Secondary
     bne LH2
     cmp simbols+6
     bne LH2
-    lda #3
+    lda #$03
     sta turn
     sta simbols+2
     sta simbols+4
@@ -444,7 +443,7 @@ LH2:    ; Line Horizon 2
     bne LH3
     cmp simbols+5
     bne LH3
-    lda #3
+    lda #$03
     sta turn
     sta simbols+3
     sta simbols+4
@@ -457,43 +456,41 @@ LH3:   ; Line Horizon 3
     bne outVerifyGame
     cmp simbols+8
     bne outVerifyGame
-    lda #3
+    lda #$03
     sta turn
     sta simbols+6
     sta simbols+7
     sta simbols+8
     jmp outVerifyGame
 outVerifyGame:
-    ; Set a player winner
-    lda turn 
-    cmp #3
+    pla
+    ldx turn 
+    cpx #$03
     bne outWins
-    pla
-    eor #3
+    ; Set a player winner
+    eor #$03
     sta winner
-    rts
 outWins:
-    pla
     rts
 
 ;===================================================================
 ;  Reset Game After Some Winner
 ;
-ResetGame: 
+ResetEndGame: 
     lda turn
-    cmp #3
+    cmp #$03
     bne outResetGame
-    lda p0InputControl
+    lda InputControl
     and #%00010000
     bne Reset
-    lda p1InputControl
+    lda InputControl+1
     and #%00010000
     bne Reset
     jmp outResetGame
 Reset:
-    lda #0
-    ldy #1
-    ldx #9
+    lda #$00
+    ldy #$01
+    ldx #$09
     sty turn
     sta countFrames
     sty framesBlink
@@ -501,7 +498,7 @@ loopReset:
     sta simbols-1,x
     dex
     bne loopReset
-    lda #3
+    lda #$03
     sta winner
     jsr FirstClear
 outResetGame:
@@ -512,26 +509,26 @@ outResetGame:
 ;
 PrintTurnPlayer:
     lda turn
-    cmp #3
+    cmp #$03
     beq endGame
     bit PPUSTATUS
     lda #$20
     sta PPUADDR
     lda #$A8
     sta PPUADDR
-    ldx #0
+    ldx #$00
     stx PPUDATA
 loopTurn:
     lda StringTurn,x
     sta PPUDATA
     inx
-    cpx #12
+    cpx #$0C
     bcc loopTurn
     jsr PrintPlayerNumber
     rts
 endGame:
     lda winner
-    cmp #3
+    cmp #$03
     beq drawn
     jsr PrintPlayerWinner
     rts
@@ -548,11 +545,11 @@ PrintPlayerNumber:
     sta PPUADDR
     lda #$B5
     sta PPUADDR
-    lda #17
+    lda #$11
     clc 
     adc turn
     sta PPUDATA
-    lda #0
+    lda #$00
     sta PPUDATA
     rts
 
@@ -565,14 +562,14 @@ PrintPlayerWinner:
     sta PPUADDR
     lda #$A8
     sta PPUADDR
-    ldx #0
+    ldx #$00
 loopWinner:
     lda StringWinner,X
     sta PPUDATA
     inx
-    cpx #14
+    cpx #$0E
     bcc loopWinner
-    lda #17
+    lda #$11
     clc 
     adc winner
     sta PPUDATA
@@ -587,16 +584,16 @@ PrintDrawn:
     sta PPUADDR
     lda #$A8
     sta PPUADDR
-    ldx #0
+    ldx #$00
     stx PPUDATA
     stx PPUDATA
 loopDrawn:
     lda StringDrawn,x
     sta PPUDATA
     inx
-    cpx #10
+    cpx #$0A
     bcc loopDrawn
-    lda #0
+    lda #$00
     sta PPUDATA
     sta PPUDATA
     rts
@@ -609,16 +606,16 @@ PrintCreated:
     sta PPUADDR
     lda #$23
     sta PPUADDR
-    ldx #0
+    ldx #$00
     stx PPUDATA
     stx PPUDATA
 loopCreated:
     lda StringCreated,x
     sta PPUDATA
     inx
-    cpx #20
+    cpx #$14
     bcc loopCreated
-    lda #0
+    lda #$00
     sta PPUDATA
     sta PPUDATA
     rts
@@ -626,8 +623,8 @@ loopCreated:
 ;  Print Grid (BackGround)
 ;
 PrintGrid:
-    ldx #14 
-    ldy #2 
+    ldx #$0E 
+    ldy #$02 
     lda #$04 
     sta PPUCTRL
     bit PPUSTATUS
@@ -635,7 +632,7 @@ PrintGrid:
     sta PPUADDR
     lda #$0C
     sta PPUADDR
-    lda #1 
+    lda #$01 
 LoopColuns:
     sta PPUDATA 
     dex
@@ -645,20 +642,20 @@ LoopColuns:
     sta PPUADDR
     lda #$11
     sta PPUADDR
-    lda #1
-    ldx #14
+    lda #$01
+    ldx #$0E
     dey
     bne LoopColuns
     lda #$00 
     sta PPUCTRL
-    ldx #14 
-    ldy #2 
+    ldx #$0E 
+    ldy #$02 
     bit PPUSTATUS
     lda #$21
     sta PPUADDR
     lda #$88
     sta PPUADDR
-    lda #2 
+    lda #$02 
 LoopRows:
     sta PPUDATA 
     dex
@@ -668,11 +665,11 @@ LoopRows:
     sta PPUADDR
     lda #$28
     sta PPUADDR
-    lda #2
-    ldx #14
+    lda #$02
+    ldx #$0E
     dey
     bne LoopRows  
-    ldx #3
+    ldx #$03
     bit PPUSTATUS
     lda #$21
     sta PPUADDR
@@ -768,7 +765,7 @@ StringCreated:
 ;===================================================================
 ;  Palettes Color data
 ;
-palettes:
+Palettes:
     .byte $00
     .byte $30, $0F, $0F
     .byte $00
@@ -786,7 +783,7 @@ palettes:
     .byte $02, $03, $04
     .byte $02
     .byte $05, $06, $07
-
+EndPalettes
 ;===================================================================
 ;  Bank of vectors input address memory
 ;
