@@ -53,14 +53,14 @@ NMI:
     jsr PrintTurnPlayer
     ; Blink the selected position to play
     jsr BlinkChoose
-    ; Update Sprites (Blink, Position set, Game over, etc..)
-    jsr UpdateSprites 
     ; Get Input Control Players.
     jsr GetInputControl
     ; Move "cursor" in screen by input control
     jsr MoveChoosePlayer
     ; Select choose 
     jsr SetChoosePlayer
+    ; Update Sprites (Blink, Position set, Game over, etc..)
+    jsr UpdateSprites 
     ; Reset game after some winner
     jsr ResetEndGame
     ;  Increment Count Frame and Decrement framesInput
@@ -117,7 +117,7 @@ WaitVblank2:
     jsr LoadSprites
     jsr PrintGrid
     ; Take first position clear (this case first position table (new game))
-    jsr FirstClear
+    jsr AnyValidPosition
     ; Load DMA for input sprites inside VRAM (PPU Memory)
     lda #$02
     sta OAMDMA
@@ -203,17 +203,17 @@ LoopPrint:
 ;===================================================================
 ;  Get first position Clear, count by rows and coluns
 ;
-FirstClear:
+AnyValidPosition:
     ldx #$00
-loopFirstClear:
+LoopFirstClear:
     lda simbols,x
-    beq find
+    beq Found
     inx
     cpx #$09
-    bne loopFirstClear
+    bne LoopFirstClear
     lda #$03
     sta turn
-find:
+Found:
     stx choose
     rts
 
@@ -272,9 +272,9 @@ setTimeValid:
     ; Swap Turn
     eor #$03
     sta turn
-    jsr VerifyGame
+    jsr VerifyWinner
     ; Get new blank position
-    jsr FirstClear
+    jsr AnyValidPosition
     lda #SPEEDREADINPUT
     sta framesInput
 outSetChoosePlayer:
@@ -361,7 +361,7 @@ outChoosePlayer:
 ;===================================================================
 ;  Verify end game (winer)
 ;       obs: future optimal code (more generic)
-VerifyGame:
+VerifyWinner:
     lda turn
     pha
     lda simbols
@@ -479,14 +479,13 @@ outWins:
 ResetEndGame: 
     lda turn
     cmp #$03
-    bne outResetGame
+    bne OutResetGame
     lda InputControl
     and #%00010000
     bne Reset
     lda InputControl+1
     and #%00010000
-    bne Reset
-    jmp outResetGame
+    beq OutResetGame
 Reset:
     lda #$00
     ldy #$01
@@ -494,14 +493,14 @@ Reset:
     sty turn
     sta countFrames
     sty framesBlink
-loopReset:
+LoopReset:
     sta simbols-1,x
     dex
-    bne loopReset
+    bne LoopReset
     lda #$03
     sta winner
-    jsr FirstClear
-outResetGame:
+    jsr AnyValidPosition
+OutResetGame:
     rts
     
 ;===================================================================
