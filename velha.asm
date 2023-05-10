@@ -6,7 +6,7 @@
 
 ;=============================  Constants  =============================
 BPMBLINK       = (3600/180)  ; bpm blink choose (3600/BPM*2), exemple (3600/180) equal 90 bpm blink choose.
-SPEEDREADINPUT = 12          ; frames to cooldown control input
+SPEEDREADINPUT = 10          ; frames to cooldown control input
 
 ;=============================  PPU Registers  =============================
 PPUCTRL   = $2000   ; Controller 
@@ -30,9 +30,7 @@ framesBlink     .rs 1   ; Next Number Frame for Blink (framesBlink = countFrames
 framesInput     .rs 1   ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
 p0InputControl  .rs 1   ; Control Press by Player 0 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
 p1InputControl  .rs 1   ; Control Press by Player 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
-usoGeral        .rs 1   ; Use for stand by data and aux in multiplication method
-pontSimbols     .rs 2   ; Pointer for simbols (LSB,MSB) (Little Endian)
-pontGeral       .rs 2   ; Pointer for use generic (LSB,MSB) (Little Endian)
+pontGeral       .rs 2   ; Pointer for use generic (LSB,MSB) (Big Endian)
 simbols         .rs 9   ; vector contaim tile of ever positon of table game 
 turn            .rs 1   ; turn of P0 = 1, P1 = 2, Over = 3
 choose          .rs 1   ; Blank Position for next player start option
@@ -54,9 +52,6 @@ NMI:
     sta OAMDMA
     ; Print string of turn player
     jsr PrintTurnPlayer
-    lda #$0
-    sta PPUADDR
-    sta PPUADDR
     ; Blink the selected position to play
     jsr BlinkChoose
     ; Update Sprites (Blink, Position set, Game over, etc..)
@@ -69,11 +64,11 @@ NMI:
     jsr MoveChoosePlayer
     ; reset game after some winner
     jsr ResetGame
-    inc countFrames
-    lda #%10001000
-    sta PPUCTRL
-    lda #%00011110
-    sta PPUMASK
+    ;  Increment Count Frame and Decrement framesInput
+    jsr ChangeCounts
+    lda #0
+    sta PPUADDR
+    sta PPUADDR
     rti
 
 ;=============================  Enter Point CPU  =============================
@@ -129,6 +124,8 @@ WaitVblank2:
     sta OAMDMA
     lda #%10001000
     sta PPUCTRL
+    lda #%00011110
+    sta PPUMASK
     ; Forever loop, do nothing, waint for a vblank and a NMI call
 ForeverLoop:
     nop
@@ -222,6 +219,17 @@ find:
     rts
 
 ;===================================================================
+;  Increment Count Frame and Decrement framesInput
+;
+ChangeCounts:
+    inc countFrames
+    lda framesInput
+    beq NoDecInput
+    dec framesInput
+NoDecInput:
+    rts
+
+;===================================================================
 ;  blink sprite select position player (select position)
 ;
 BlinkChoose:
@@ -279,7 +287,6 @@ outSetChoosePlayer:
 MoveChoosePlayer:
     lda framesInput
     beq moveTimeValid
-    dec framesInput
     jmp outChoosePlayer
 moveTimeValid:
     ldy choose
@@ -296,9 +303,9 @@ moveTimeValid:
     sta pontGeral
     lda #high(UP)
     sta pontGeral+1
-    dey
-    dey
 UP:
+    dey
+    dey
     dey
     jmp moveChoose
 tryDown:
@@ -309,9 +316,9 @@ tryDown:
     sta pontGeral
     lda #high(DOWN)
     sta pontGeral+1
-    iny
-    iny
 DOWN:
+    iny
+    iny
     iny
     jmp moveChoose
 tryLeft:
@@ -351,6 +358,85 @@ validPosition:
     sta framesInput
 outChoosePlayer:
     rts
+
+; ;===================================================================
+; ;  Move "cursor" do player
+; ;   
+; MoveChoosePlayer:
+;     lda framesInput
+;     beq moveTimeValid
+;     dec framesInput
+;     jmp outChoosePlayer
+; moveTimeValid:
+;     ldy choose
+;     cpy #9
+;     beq outChoosePlayer
+;     ldx turn
+;     cpx #3
+;     beq outChoosePlayer
+;     dex
+;     lda p0InputControl,x
+;     and #%00001000        ; UP
+;     beq tryDown
+;     lda #low(UP)
+;     sta pontGeral
+;     lda #high(UP)
+;     sta pontGeral+1
+;     dey
+;     dey
+; UP:
+;     dey
+;     jmp moveChoose
+; tryDown:
+;     lda p0InputControl,x
+;     and #%00000100        ; DOWN
+;     beq tryLeft
+;     lda #low(DOWN)
+;     sta pontGeral
+;     lda #high(DOWN)
+;     sta pontGeral+1
+;     iny
+;     iny
+; DOWN:
+;     iny
+;     jmp moveChoose
+; tryLeft:
+;     lda p0InputControl,x
+;     and #%00000010        ; LEFT
+;     beq tryRight
+;     lda #low(LEFT)
+;     sta pontGeral
+;     lda #high(LEFT)
+;     sta pontGeral+1
+; LEFT:
+;     dey
+;     jmp moveChoose
+; tryRight:
+;     lda p0InputControl,x
+;     and #%00000001        ; RIGHT
+;     beq outChoosePlayer
+;     lda #low(RIGHT)
+;     sta pontGeral
+;     lda #high(RIGHT)
+;     sta pontGeral+1
+; RIGHT:
+;     iny
+; moveChoose:
+;     cpy #0
+;     bcc outChoosePlayer
+;     cpy #9
+;     bcs outChoosePlayer
+;     lda simbols,y  
+;     beq validPosition
+;     jmp [pontGeral]
+; validPosition:
+;     ldx choose
+;     sta simbols,x
+;     sty choose
+;     lda #SPEEDREADINPUT
+;     sta framesInput
+; outChoosePlayer:
+;     rts
 
 ;===================================================================
 ;  Verify end game (winer)
