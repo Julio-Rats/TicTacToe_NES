@@ -19,6 +19,34 @@ PPUADDR   = $2006   ; PPU Address
 PPUDATA   = $2007   ; PPU Data 
 OAMDMA    = $4014   ; OAM DMA 
 
+;=============================  APU Registers  =============================
+; Pulse Channel 1
+PULSE1_R0   = $4000   ; Pulse 1 register 0
+PULSE1_R1   = $4001   ; Pulse 1 register 1
+PULSE1_R2   = $4002   ; Pulse 1 register 2
+PULSE1_R3   = $4003   ; Pulse 1 register 3
+; Pulse Channel 2
+PULSE2_R0   = $4004   ; Pulse 2 register 0
+PULSE2_R1   = $4005   ; Pulse 2 register 1
+PULSE2_R2   = $4006   ; Pulse 2 register 2
+PULSE2_R3   = $4007   ; Pulse 2 register 3
+; Triangle Channel
+TRIANGLE_R0 = $4008   ; Triangle register 0
+TRIANGLE_R1 = $400A   ; Triangle register 1
+TRIANGLE_R2 = $400B   ; Triangle register 2
+; Noise Channel
+NOISE_R0    = $400C   ; Noise register 0
+NOISE_R1    = $400E   ; Noise register 1
+NOISE_R2    = $400F   ; Noise register 2
+; DMC Channel
+DMC_R0      = $4010   ; DMC register 0
+DMC_R1      = $4011   ; DMC register 1
+DMC_R2      = $4012   ; DMC register 2
+DMC_R3      = $4013   ; DMC register 3
+; Others Uses
+APUCTRL     = $4015   ; Control and Status
+APUFRMC     = $4017   ; Frame Counter
+
 ;=============================  variables   =============================
 ; Variaveis (RAM Interna do NES)
 ; ---> Zero Page used here ! $00--$FF (256 Bytes Free RAM) <---
@@ -28,7 +56,7 @@ reserved        .rs 2   ; Reserved for nes use.
 countFrames     .rs 1   ; Counter number of frames 
 framesBlink     .rs 1   ; Next Number Frame for Blink (framesBlink = countFrames+#BPMBLINK)
 framesInput     .rs 1   ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
-InputControl    .rs 2   ; Control Press by Player 0 and 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
+inputControl    .rs 2   ; Control Press by Player 0 and 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
 moveDirPonter   .rs 2   ; Pointer use for repeat same move (LSB,MSB) (Big Endian)
 simbols         .rs 9   ; vector contaim tile of ever positon of table game 
 turn            .rs 1   ; turn of P0 = 1, P1 = 2, Over = 3
@@ -82,9 +110,9 @@ Boot:
     inx
     ; Disable graphics and sound
     stx PPUCTRL     ; No NMI Call
-    stx PPUMASK     ; No rendering
-    stx $4010       ; No sound
-    stx $4017       ; NTSC 60Hz
+    stx PPUMASK     ; No Rendering
+    stx DMC_R0      ; No Sound
+    stx APUFRMC     ; No IRQ APU Flag
     ; Waint for new frame
 WaitVblank1:
     bit PPUSTATUS
@@ -165,18 +193,18 @@ LoopSprites:
 ;
 GetInputControl:
     lda #$01
-    sta InputControl+1
+    sta inputControl+1
     sta $4016
     lda #$00
     sta $4016 
-loopReadControl:
+LoopReadControl:
     lda $4016
     lsr a
-    rol InputControl
+    rol inputControl
     lda $4017
     lsr a
-    rol InputControl+1
-    bcc loopReadControl
+    rol inputControl+1
+    bcc LoopReadControl
     rts
 
 ;===================================================================
@@ -256,14 +284,14 @@ outBlinkChoose:
 ;  
 SetChoosePlayer:
     lda framesInput
-    beq setTimeValid
+    beq SetTimeValid
     jmp outSetChoosePlayer
-setTimeValid:
+SetTimeValid:
     ldx turn
     cpx #$03
     beq outSetChoosePlayer
     dex
-    lda InputControl,x
+    lda inputControl,x
     and #%10000000
     beq outSetChoosePlayer
     ldy choose
@@ -285,77 +313,77 @@ outSetChoosePlayer:
 ;   
 MoveChoosePlayer:
     lda framesInput
-    beq moveTimeValid
-    jmp outChoosePlayer
-moveTimeValid:
+    beq MoveTimeValid
+    jmp OutChoosePlayer
+MoveTimeValid:
     ldy choose
     cpy #$09
-    beq outChoosePlayer
+    beq OutChoosePlayer
     ldx turn
     cpx #$03
-    beq outChoosePlayer
+    beq OutChoosePlayer
     dex
-    lda InputControl,x
+    lda inputControl,x
     and #%00001000        ; UP
-    beq tryDown
-    lda #low(UP)
+    beq TryDown
+    lda #low(Up)
     sta moveDirPonter
-    lda #high(UP)
+    lda #high(Up)
     sta moveDirPonter+1
-UP:
+Up:
     dey
     dey
     dey
-    jmp moveChoose
-tryDown:
-    lda InputControl,x
+    jmp MoveChoose
+TryDown:
+    lda inputControl,x
     and #%00000100        ; DOWN
-    beq tryLeft
-    lda #low(DOWN)
+    beq TryLeft
+    lda #low(Down)
     sta moveDirPonter
-    lda #high(DOWN)
+    lda #high(Down)
     sta moveDirPonter+1
-DOWN:
+Down:
     iny
     iny
     iny
-    jmp moveChoose
-tryLeft:
-    lda InputControl,x
+    jmp MoveChoose
+TryLeft:
+    lda inputControl,x
     and #%00000010        ; LEFT
-    beq tryRight
-    lda #low(LEFT)
+    beq TryRight
+    lda #low(Left)
     sta moveDirPonter
-    lda #high(LEFT)
+    lda #high(Left)
     sta moveDirPonter+1
-LEFT:
+Left:
     dey
-    jmp moveChoose
-tryRight:
-    lda InputControl,x
+    jmp MoveChoose
+TryRight:
+    lda inputControl,x
     and #%00000001        ; RIGHT
-    beq outChoosePlayer
-    lda #low(RIGHT)
+    beq OutChoosePlayer
+    lda #low(Right)
     sta moveDirPonter
-    lda #high(RIGHT)
+    lda #high(Right)
     sta moveDirPonter+1
-RIGHT:
+Right:
     iny
-moveChoose:
+MoveChoose:
     cpy #$00
-    bcc outChoosePlayer
+    bcc OutChoosePlayer
     cpy #$09
-    bcs outChoosePlayer
+    bcs OutChoosePlayer
     lda simbols,y  
-    beq validPosition
+    beq ValidPosition
     jmp [moveDirPonter]
-validPosition:
+ValidPosition:
     ldx choose
     sta simbols,x
     sty choose
     lda #SPEEDREADINPUT
     sta framesInput
-outChoosePlayer:
+OutChoosePlayer:
     rts
 
 ;===================================================================
@@ -376,7 +404,7 @@ VerifyWinner:
     sta simbols
     sta simbols+1
     sta simbols+2
-    jmp outVerifyGame
+    jmp OutVerifyGame
 DiagMain:  ; diagonal main
     cmp simbols+4
     bne LV1
@@ -387,7 +415,7 @@ DiagMain:  ; diagonal main
     sta simbols
     sta simbols+4
     sta simbols+8
-    jmp outVerifyGame
+    jmp OutVerifyGame
 LV1:    ; Line Vertical 1
     cmp simbols+3
     bne LV2
@@ -398,7 +426,7 @@ LV1:    ; Line Vertical 1
     sta simbols
     sta simbols+3
     sta simbols+6
-    jmp outVerifyGame
+    jmp OutVerifyGame
 LV2:    ; Line Vertical 2
     lda simbols+1
     beq LV3
@@ -411,7 +439,7 @@ LV2:    ; Line Vertical 2
     sta simbols+1
     sta simbols+4
     sta simbols+7
-    jmp outVerifyGame
+    jmp OutVerifyGame
 LV3:    ; Line Vertical 2
     lda simbols+2
     beq LH2
@@ -424,7 +452,7 @@ LV3:    ; Line Vertical 2
     sta simbols+2
     sta simbols+5
     sta simbols+8
-    jmp outVerifyGame
+    jmp OutVerifyGame
 DiagSec:    ; Diagonal Secondary
     cmp simbols+4
     bne LH2
@@ -435,7 +463,7 @@ DiagSec:    ; Diagonal Secondary
     sta simbols+2
     sta simbols+4
     sta simbols+6
-    jmp outVerifyGame
+    jmp OutVerifyGame
 LH2:    ; Line Horizon 2
     lda simbols+3
     beq LH3
@@ -448,29 +476,29 @@ LH2:    ; Line Horizon 2
     sta simbols+3
     sta simbols+4
     sta simbols+5
-    jmp outVerifyGame
+    jmp OutVerifyGame
 LH3:   ; Line Horizon 3
     lda simbols+6
-    beq outVerifyGame
+    beq OutVerifyGame
     cmp simbols+7
-    bne outVerifyGame
+    bne OutVerifyGame
     cmp simbols+8
-    bne outVerifyGame
+    bne OutVerifyGame
     lda #$03
     sta turn
     sta simbols+6
     sta simbols+7
     sta simbols+8
-    jmp outVerifyGame
-outVerifyGame:
+    jmp OutVerifyGame
+OutVerifyGame:
     pla
     ldx turn 
     cpx #$03
-    bne outWins
+    bne OutWins
     ; Set a player winner
     eor #$03
     sta winner
-outWins:
+OutWins:
     rts
 
 ;===================================================================
@@ -480,10 +508,10 @@ ResetEndGame:
     lda turn
     cmp #$03
     bne OutResetGame
-    lda InputControl
+    lda inputControl
     and #%00010000
     bne Reset
-    lda InputControl+1
+    lda inputControl+1
     and #%00010000
     beq OutResetGame
 Reset:
@@ -509,7 +537,7 @@ OutResetGame:
 PrintTurnPlayer:
     lda turn
     cmp #$03
-    beq endGame
+    beq EndGame
     bit PPUSTATUS
     lda #$20
     sta PPUADDR
@@ -517,21 +545,21 @@ PrintTurnPlayer:
     sta PPUADDR
     ldx #$00
     stx PPUDATA
-loopTurn:
+LoopTurn:
     lda StringTurn,x
     sta PPUDATA
     inx
     cpx #$0C
-    bcc loopTurn
+    bcc LoopTurn
     jsr PrintPlayerNumber
     rts
-endGame:
+EndGame:
     lda winner
     cmp #$03
-    beq drawn
+    beq Drawn
     jsr PrintPlayerWinner
     rts
-drawn:
+Drawn:
     jsr PrintDrawn
     rts
 
@@ -608,12 +636,12 @@ PrintCreated:
     ldx #$00
     stx PPUDATA
     stx PPUDATA
-loopCreated:
+LoopCreated:
     lda StringCreated,x
     sta PPUDATA
     inx
     cpx #$14
-    bcc loopCreated
+    bcc LoopCreated
     lda #$00
     sta PPUDATA
     sta PPUDATA
@@ -765,23 +793,23 @@ StringCreated:
 ;  Palettes Color data
 ;
 Palettes:
-    .byte $00
+    .byte $0F
     .byte $30, $0F, $0F
-    .byte $00
-    .byte $01, $02, $03
-    .byte $00
-    .byte $04, $05, $07
-    .byte $00
-    .byte $08, $09, $0A
+    .byte $0F
+    .byte $30, $0F, $0F
+    .byte $0F
+    .byte $30, $0F, $0F
+    .byte $0F
+    .byte $30, $0F, $0F
 
     .byte $0F
     .byte $30, $0F, $0F
-    .byte $00
-    .byte $0B, $0C, $01
-    .byte $00
-    .byte $02, $03, $04
-    .byte $02
-    .byte $05, $06, $07
+    .byte $0F
+    .byte $30, $0F, $0F
+    .byte $0F
+    .byte $30, $0F, $0F
+    .byte $0F
+    .byte $30, $0F, $0F
 EndPalettes
 ;===================================================================
 ;  Bank of vectors input address memory
