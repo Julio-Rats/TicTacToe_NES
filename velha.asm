@@ -139,7 +139,7 @@ WaitVblank2:
     lda #$02
     sta OAMDMA
     ; Enable APU
-    lda #%00000111
+    lda #%00000011
     sta APUCTRL
     ; Pulse Channel Control Setup
     lda #%10011111
@@ -664,7 +664,6 @@ LoopColuns:
     sta PPUDATA 
     dex
     bne LoopColuns
-    bit PPUSTATUS
     lda #$21
     sta PPUADDR
     lda #$11
@@ -677,7 +676,6 @@ LoopColuns:
     sta PPUCTRL
     ldx #$0E 
     ldy #$02 
-    bit PPUSTATUS
     lda #$21
     sta PPUADDR
     lda #$88
@@ -687,7 +685,6 @@ LoopRows:
     sta PPUDATA 
     dex
     bne LoopRows
-    bit PPUSTATUS
     lda #$22
     sta PPUADDR
     lda #$28
@@ -697,25 +694,21 @@ LoopRows:
     dey
     bne LoopRows  
     ldx #$03
-    bit PPUSTATUS
     lda #$21
     sta PPUADDR
     lda #$8C
     sta PPUADDR
     stx PPUDATA
-    bit PPUSTATUS
     lda #$21
     sta PPUADDR
     lda #$91
     sta PPUADDR
     stx PPUDATA
-    bit PPUSTATUS
     lda #$22
     sta PPUADDR
     lda #$2C
     sta PPUADDR
     stx PPUDATA
-    bit PPUSTATUS
     lda #$22
     sta PPUADDR
     lda #$31
@@ -729,9 +722,9 @@ LoopRows:
 ;
 Play220:
     lda #%11111011
-    sta PULSE2LFT
+    sta PULSE1LFT
     lda #%01001001
-    sta PULSE2HFT
+    sta PULSE1HFT
     rts
 
 Play440:
@@ -743,6 +736,7 @@ Play440:
 
 IRQ:
     rti
+   
 ;===================================================================
 ;  Print Grid (BackGround)
 ;
