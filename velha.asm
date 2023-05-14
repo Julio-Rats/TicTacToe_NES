@@ -21,31 +21,20 @@ OAMDMA    = $4014   ; OAM DMA
 
 ;=============================  APU Registers  =============================
 ; Pulse Channel 1
-PULSE1_R0   = $4000   ; Pulse 1 register 0
-PULSE1_R1   = $4001   ; Pulse 1 register 1
-PULSE1_R2   = $4002   ; Pulse 1 register 2
-PULSE1_R3   = $4003   ; Pulse 1 register 3
+PULSE1CTRL    = $4000   ; Pulse 1 Control
+PULSE1RMPCTRL = $4001   ; Pulse 1 Ramp Control
+PULSE1LFT     = $4002   ; Pulse 1 Low bit Frequency
+PULSE1HFT     = $4003   ; Pulse 1 High bit Frequency
 ; Pulse Channel 2
-PULSE2_R0   = $4004   ; Pulse 2 register 0
-PULSE2_R1   = $4005   ; Pulse 2 register 1
-PULSE2_R2   = $4006   ; Pulse 2 register 2
-PULSE2_R3   = $4007   ; Pulse 2 register 3
-; Triangle Channel
-TRIANGLE_R0 = $4008   ; Triangle register 0
-TRIANGLE_R1 = $400A   ; Triangle register 1
-TRIANGLE_R2 = $400B   ; Triangle register 2
-; Noise Channel
-NOISE_R0    = $400C   ; Noise register 0
-NOISE_R1    = $400E   ; Noise register 1
-NOISE_R2    = $400F   ; Noise register 2
+PULSE2CTRL    = $4004   ; Pulse 2 Control
+PULSE2RMPCTRL = $4005   ; Pulse 2 Ramp Control
+PULSE2LFT     = $4006   ; Pulse 2 Low bit Frequency
+PULSE2HFT     = $4007   ; Pulse 2 High bit Frequency
 ; DMC Channel
-DMC_R0      = $4010   ; DMC register 0
-DMC_R1      = $4011   ; DMC register 1
-DMC_R2      = $4012   ; DMC register 2
-DMC_R3      = $4013   ; DMC register 3
+DMCIRQ        = $4010   ; DMC IRQ Enable
 ; Others Uses
-APUCTRL     = $4015   ; Control and Status
-APUFRMC     = $4017   ; Frame Counter
+APUCTRL       = $4015   ; Control and Status
+APUFRMC       = $4017   ; Frame Counter
 
 ;=============================  variables   =============================
 ; Variaveis (RAM Interna do NES)
@@ -111,7 +100,7 @@ Boot:
     ; Disable graphics and sound
     stx PPUCTRL     ; No NMI Call
     stx PPUMASK     ; No Rendering
-    stx DMC_R0      ; No Sound
+    stx DMCIRQ      ; No Sound
     stx APUFRMC     ; No IRQ APU Flag
     ; Waint for new frame
 WaitVblank1:
@@ -153,6 +142,8 @@ WaitVblank2:
     sta PPUCTRL
     lda #%00011110
     sta PPUMASK
+    lda #%00000111
+    sta APUCTRL
     ; Forever loop, do nothing, waint for a vblank and a NMI call
 ForeverLoop:
     nop
@@ -305,6 +296,7 @@ SetTimeValid:
     jsr AnyValidPosition
     lda #SPEEDREADINPUT
     sta framesInput
+    jsr Play440
 outSetChoosePlayer:
     rts
 
@@ -383,6 +375,7 @@ ValidPosition:
     sty choose
     lda #SPEEDREADINPUT
     sta framesInput
+    jsr Play220
 OutChoosePlayer:
     rts
 
@@ -528,6 +521,7 @@ LoopReset:
     lda #$03
     sta winner
     jsr AnyValidPosition
+    jsr Play440
 OutResetGame:
     rts
     
@@ -722,6 +716,27 @@ LoopRows:
     sta PPUADDR
     stx PPUDATA
     jsr PrintCreated
+    rts
+
+;===================================================================
+;  Sounds game
+;
+Play220:
+    lda #%10011111
+    sta PULSE2CTRL
+    lda #%11111011
+    sta PULSE2LFT
+    lda #%01001001
+    sta PULSE2HFT
+    rts
+
+Play440:
+    lda #%10011111
+    sta PULSE2CTRL
+    lda #%11111101
+    sta PULSE2LFT
+    lda #%01001000
+    sta PULSE2HFT
     rts
 
 IRQ:
