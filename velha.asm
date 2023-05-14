@@ -138,12 +138,18 @@ WaitVblank2:
     ; Load DMA for input sprites inside VRAM (PPU Memory)
     lda #$02
     sta OAMDMA
+    ; Enable APU
+    lda #%00000111
+    sta APUCTRL
+    ; Pulse Channel Control Setup
+    lda #%10011111
+    sta PULSE1CTRL
+    sta PULSE2CTRL
+    ; Enable NMI in vblank and rendering sprites and backgrounds
     lda #%10001000
     sta PPUCTRL
     lda #%00011110
     sta PPUMASK
-    lda #%00000111
-    sta APUCTRL
     ; Forever loop, do nothing, waint for a vblank and a NMI call
 ForeverLoop:
     nop
@@ -515,8 +521,8 @@ Reset:
     sta countFrames
     sty framesBlink
 LoopReset:
-    sta simbols-1,x
     dex
+    sta simbols,x
     bne LoopReset
     lda #$03
     sta winner
@@ -584,12 +590,12 @@ PrintPlayerWinner:
     lda #$A8
     sta PPUADDR
     ldx #$00
-loopWinner:
+LoopWinner:
     lda StringWinner,X
     sta PPUDATA
     inx
     cpx #$0E
-    bcc loopWinner
+    bcc LoopWinner
     lda #$11
     clc 
     adc winner
@@ -608,12 +614,12 @@ PrintDrawn:
     ldx #$00
     stx PPUDATA
     stx PPUDATA
-loopDrawn:
+LoopDrawn:
     lda StringDrawn,x
     sta PPUDATA
     inx
     cpx #$0A
-    bcc loopDrawn
+    bcc LoopDrawn
     lda #$00
     sta PPUDATA
     sta PPUDATA
@@ -722,8 +728,6 @@ LoopRows:
 ;  Sounds game
 ;
 Play220:
-    lda #%10011111
-    sta PULSE2CTRL
     lda #%11111011
     sta PULSE2LFT
     lda #%01001001
@@ -731,8 +735,6 @@ Play220:
     rts
 
 Play440:
-    lda #%10011111
-    sta PULSE2CTRL
     lda #%11111101
     sta PULSE2LFT
     lda #%01001000
