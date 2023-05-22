@@ -106,17 +106,11 @@ Boot:
 WaitVblank1:
     bit PPUSTATUS
     bpl WaitVblank1
-    ; Clear Memory Inside NES ($0000-$07FF) Mirrored to ($0800-$1FFF)
+    ; Clear Memory Inside NES ($0000-$07FF) Mirrored to ($0800-$1FFF) (Only Used in Game)
     lda #$00
 ClearMemory:
-    sta $0000,x
-    sta $0100,x
-    sta $0200,x
-    sta $0300,x
-    sta $0400,x
-    sta $0500,x
-    sta $0600,x
-    sta $0700,x
+    sta $0000,x ; zero page
+    sta $0200,x ; sprites memory
     inx
     bne ClearMemory
     ; Waint again for new frame
@@ -127,7 +121,7 @@ WaitVblank2:
     lda #$01
     sta turn        ; Player 1 ever start
     lda #$03
-    sta winner      ; assuming a possible tie
+    sta winner      ; Assuming a possible tie
 ;===================================================================
 ;   Load Sprites Palettes colors, and BackGrid (Grid Table)
     jsr LoadPalettes
