@@ -54,7 +54,7 @@ winner          .rs 1   ; Winner P0 = 1, P1 = 2, Drawn = 3
 
 ;=============================  Code Segment   =============================
     .code
-     ; Start bank code (CPU $8000-$BFFF) Mirrored to (CPU $C000-$FFFF)
+    ; Start bank code (CPU $8000-$BFFF) Mirrored to (CPU $C000-$FFFF)
     .bank 0
     .org $8000
 
@@ -728,9 +728,6 @@ Play440:
     sta PULSE2HFT
     rts
 
-IRQ:
-    rti
-   
 ;===================================================================
 ;  Print Grid (BackGround)
 ;
@@ -824,7 +821,6 @@ EndPalettes
 
     .dw NMI     ; Non Maskable Interrupt
     .dw Boot    ; Enter Point Address Code
-    .dw IRQ     ; Vectos interrupt (not use)
 
 ;===================================================================
 ;  Bank of CHR memory (VRAM $0000-$1FFF)
