@@ -5,7 +5,7 @@
     .inesmir 0      ; BCG Horizontal Mirroring
 
 ;=============================  Constants  =============================
-BPMBLINK       = (3600/180)  ; bpm blink choose (3600/BPM*2), exemple (3600/180) equal 90 bpm blink choose.
+BPMBLINK       = (3600/180)  ; bpm blink choose (3600/(BPM*2)), exemple (3600/180) equal 90 bpm blink choose.
 SPEEDREADINPUT = 10          ; frames to cooldown control input
 
 ;=============================  PPU Registers  =============================
@@ -618,6 +618,7 @@ LoopDrawn:
     sta PPUDATA
     sta PPUDATA
     rts
+
 ;===================================================================
 ;  Print String Created
 ;
@@ -640,6 +641,7 @@ LoopCreated:
     sta PPUDATA
     sta PPUDATA
     rts
+
 ;===================================================================
 ;  Print Grid (BackGround)
 ;
@@ -813,6 +815,7 @@ Palettes:
     .byte $0F
     .byte $30, $0F, $0F
 EndPalettes
+
 ;===================================================================
 ;  Bank of vectors input address memory
 ;
