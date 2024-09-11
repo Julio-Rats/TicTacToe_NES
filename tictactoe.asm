@@ -5,8 +5,9 @@
     .inesmir 0      ; BCG Horizontal Mirroring
 
 ;=============================  Constants  =============================
-BPMBLINK       = (3600/180)  ; bpm blink choose (3600/(BPM*2)), exemple (3600/180) equal 90 bpm blink choose.
-SPEEDREADINPUT = 10          ; frames to cooldown control input
+BPM            = 90
+BPMBLINK       = 3600/(BPM*2) ; bpm blink choose (3600/(BPM*2)), exemple (3600/180) equal 90 bpm blink choose.
+SPEEDREADINPUT = 10           ; frames to cooldown control input
 
 ;=============================  PPU Registers  =============================
 PPUCTRL   = $2000   ; Controller 
@@ -119,9 +120,9 @@ WaitVblank2:
     bpl WaitVblank2
 ;============================= Set Variables =============================
     lda #$01
-    sta turn        ; Player 1 ever start
+    sta <turn        ; Player 1 ever start
     lda #$03
-    sta winner      ; Assuming a possible tie
+    sta <winner      ; Assuming a possible tie
 ;===================================================================
 ;   Load Sprites Palettes colors, and BackGrid (Grid Table)
     jsr LoadPalettes
@@ -184,17 +185,17 @@ LoopSprites:
 ;
 GetInputControl:
     lda #$01
-    sta inputControl+1
+    sta <inputControl+1
     sta $4016
     lda #$00
     sta $4016 
 LoopReadControl:
     lda $4016
     lsr a
-    rol inputControl
+    rol <inputControl
     lda $4017
     lsr a
-    rol inputControl+1
+    rol <inputControl+1
     bcc LoopReadControl
     rts
 
@@ -205,17 +206,17 @@ UpdateSprites:
     ldy #$00
     ldx #$00
 LoopPrint:
-    lda simbols,y
-    sta $0201,x
-    sta $0205,x
-    sta $0209,x
-    sta $020D,x
-    txa
+    lda <simbols,x
+    sta $0201,y
+    sta $0205,y
+    sta $0209,y
+    sta $020D,y
+    tya
     clc 
     adc #$10
-    tax
-    iny
-    cpy #$09
+    tay
+    inx
+    cpx #$09
     bne LoopPrint
     rts
 
@@ -225,25 +226,25 @@ LoopPrint:
 AnyValidPosition:
     ldx #$00
 LoopFirstClear:
-    lda simbols,x
+    lda <simbols,x
     beq Found
     inx
     cpx #$09
     bne LoopFirstClear
     lda #$03
-    sta turn
+    sta <turn
 Found:
-    stx choose
+    stx <choose
     rts
 
 ;===================================================================
 ;  Increment Count Frame and Decrement framesInput
 ;
 ChangeCounts:
-    inc countFrames
-    lda framesInput
+    inc <countFrames
+    lda <framesInput
     beq NoDecInput
-    dec framesInput
+    dec <framesInput
 NoDecInput:
     rts
 
@@ -251,22 +252,22 @@ NoDecInput:
 ;  blink sprite select position player (select position)
 ;
 BlinkChoose:
-    lda turn
+    lda <turn
     cmp #$03
     beq outBlinkChoose
-    lda choose 
+    lda <choose 
     cmp #$09
     beq outBlinkChoose
-    lda countFrames
-    cmp framesBlink
+    lda <countFrames
+    cmp <framesBlink
     bne outBlinkChoose
     clc
     adc #BPMBLINK
-    sta framesBlink
-    ldx choose
-    lda simbols,x
-    eor turn
-    sta simbols,x
+    sta <framesBlink
+    ldx <choose
+    lda <simbols,x
+    eor <turn
+    sta <simbols,x
 outBlinkChoose:
     rts
 
@@ -274,28 +275,28 @@ outBlinkChoose:
 ;  Select Choose Player
 ;  
 SetChoosePlayer:
-    lda framesInput
+    lda <framesInput
     beq SetTimeValid
     jmp outSetChoosePlayer
 SetTimeValid:
-    ldx turn
+    ldx <turn
     cpx #$03
     beq outSetChoosePlayer
     dex
-    lda inputControl,x
+    lda <inputControl,x
     and #%10000000
     beq outSetChoosePlayer
-    ldy choose
-    lda turn
+    ldy <choose
+    lda <turn
     sta simbols,y
     ; Swap Turn
     eor #$03
-    sta turn
+    sta <turn
     jsr VerifyWinner
     ; Get new blank position
     jsr AnyValidPosition
     lda #SPEEDREADINPUT
-    sta framesInput
+    sta <framesInput
     jsr Play440
 outSetChoosePlayer:
     rts
@@ -304,61 +305,61 @@ outSetChoosePlayer:
 ;  Move "cursor" do player
 ;   
 MoveChoosePlayer:
-    lda framesInput
+    lda <framesInput
     beq MoveTimeValid
     jmp OutChoosePlayer
 MoveTimeValid:
-    ldy choose
+    ldy <choose
     cpy #$09
     beq OutChoosePlayer
-    ldx turn
+    ldx <turn
     cpx #$03
     beq OutChoosePlayer
     dex
-    lda inputControl,x
+    lda <inputControl,x
     and #%00001000        ; UP
     beq TryDown
     lda #low(Up)
-    sta moveDirPonter
+    sta <moveDirPonter
     lda #high(Up)
-    sta moveDirPonter+1
+    sta <moveDirPonter+1
 Up:
     dey
     dey
     dey
     jmp MoveChoose
 TryDown:
-    lda inputControl,x
+    lda <inputControl,x
     and #%00000100        ; DOWN
     beq TryLeft
     lda #low(Down)
-    sta moveDirPonter
+    sta <moveDirPonter
     lda #high(Down)
-    sta moveDirPonter+1
+    sta <moveDirPonter+1
 Down:
     iny
     iny
     iny
     jmp MoveChoose
 TryLeft:
-    lda inputControl,x
+    lda <inputControl,x
     and #%00000010        ; LEFT
     beq TryRight
     lda #low(Left)
-    sta moveDirPonter
+    sta <moveDirPonter
     lda #high(Left)
-    sta moveDirPonter+1
+    sta <moveDirPonter+1
 Left:
     dey
     jmp MoveChoose
 TryRight:
-    lda inputControl,x
+    lda <inputControl,x
     and #%00000001        ; RIGHT
     beq OutChoosePlayer
     lda #low(Right)
-    sta moveDirPonter
+    sta <moveDirPonter
     lda #high(Right)
-    sta moveDirPonter+1
+    sta <moveDirPonter+1
 Right:
     iny
 MoveChoose:
@@ -370,11 +371,11 @@ MoveChoose:
     beq ValidPosition
     jmp [moveDirPonter]
 ValidPosition:
-    ldx choose
-    sta simbols,x
-    sty choose
+    ldx <choose
+    sta <simbols,x
+    sty <choose
     lda #SPEEDREADINPUT
-    sta framesInput
+    sta <framesInput
     jsr Play220
 OutChoosePlayer:
     rts
@@ -383,114 +384,114 @@ OutChoosePlayer:
 ;  Verify end game (winer)
 ;       obs: future optimal code (more generic)
 VerifyWinner:
-    lda turn
+    lda <turn
     pha
-    lda simbols
+    lda <simbols
     beq LV2
     ; line horizon 1    
-    cmp simbols+1
+    cmp <simbols+1
     bne DiagMain
-    cmp simbols+2
+    cmp <simbols+2
     bne DiagMain
     lda #$03
-    sta turn
-    sta simbols
-    sta simbols+1
-    sta simbols+2
+    sta <turn
+    sta <simbols
+    sta <simbols+1
+    sta <simbols+2
     jmp OutVerifyGame
 DiagMain:  ; diagonal main
-    cmp simbols+4
+    cmp <simbols+4
     bne LV1
-    cmp simbols+8
+    cmp <simbols+8
     bne LV1
     lda #$03
-    sta turn
-    sta simbols
-    sta simbols+4
-    sta simbols+8
+    sta <turn
+    sta <simbols
+    sta <simbols+4
+    sta <simbols+8
     jmp OutVerifyGame
 LV1:    ; Line Vertical 1
-    cmp simbols+3
+    cmp <simbols+3
     bne LV2
-    cmp simbols+6
+    cmp <simbols+6
     bne LV2
     lda #$03
-    sta turn
-    sta simbols
-    sta simbols+3
-    sta simbols+6
+    sta <turn
+    sta <simbols
+    sta <simbols+3
+    sta <simbols+6
     jmp OutVerifyGame
 LV2:    ; Line Vertical 2
-    lda simbols+1
+    lda <simbols+1
     beq LV3
-    cmp simbols+4
+    cmp <simbols+4
     bne LV3
-    cmp simbols+7
+    cmp <simbols+7
     bne LV3
     lda #$03
-    sta turn
-    sta simbols+1
-    sta simbols+4
-    sta simbols+7
+    sta <turn
+    sta <simbols+1
+    sta <simbols+4
+    sta <simbols+7
     jmp OutVerifyGame
 LV3:    ; Line Vertical 2
-    lda simbols+2
+    lda <simbols+2
     beq LH2
-    cmp simbols+5
+    cmp <simbols+5
     bne DiagSec
-    cmp simbols+8
+    cmp <simbols+8
     bne DiagSec
     lda #$03
-    sta turn
-    sta simbols+2
-    sta simbols+5
-    sta simbols+8
+    sta <turn
+    sta <simbols+2
+    sta <simbols+5
+    sta <simbols+8
     jmp OutVerifyGame
 DiagSec:    ; Diagonal Secondary
-    cmp simbols+4
+    cmp <simbols+4
     bne LH2
-    cmp simbols+6
+    cmp <simbols+6
     bne LH2
     lda #$03
-    sta turn
-    sta simbols+2
-    sta simbols+4
-    sta simbols+6
+    sta <turn
+    sta <simbols+2
+    sta <simbols+4
+    sta <simbols+6
     jmp OutVerifyGame
 LH2:    ; Line Horizon 2
-    lda simbols+3
+    lda <simbols+3
     beq LH3
-    cmp simbols+4
+    cmp <simbols+4
     bne LH3
-    cmp simbols+5
+    cmp <simbols+5
     bne LH3
     lda #$03
-    sta turn
-    sta simbols+3
-    sta simbols+4
-    sta simbols+5
+    sta <turn
+    sta <simbols+3
+    sta <simbols+4
+    sta <simbols+5
     jmp OutVerifyGame
 LH3:   ; Line Horizon 3
-    lda simbols+6
+    lda <simbols+6
     beq OutVerifyGame
-    cmp simbols+7
+    cmp <simbols+7
     bne OutVerifyGame
-    cmp simbols+8
+    cmp <simbols+8
     bne OutVerifyGame
     lda #$03
-    sta turn
-    sta simbols+6
-    sta simbols+7
-    sta simbols+8
+    sta <turn
+    sta <simbols+6
+    sta <simbols+7
+    sta <simbols+8
     jmp OutVerifyGame
 OutVerifyGame:
     pla
-    ldx turn 
+    ldx <turn 
     cpx #$03
     bne OutWins
     ; Set a player winner
     eor #$03
-    sta winner
+    sta <winner
 OutWins:
     rts
 
@@ -498,28 +499,28 @@ OutWins:
 ;  Reset Game After Some Winner
 ;
 ResetEndGame: 
-    lda turn
+    lda <turn
     cmp #$03
     bne OutResetGame
-    lda inputControl
+    lda <inputControl
     and #%00010000
     bne Reset
-    lda inputControl+1
+    lda <inputControl+1
     and #%00010000
     beq OutResetGame
 Reset:
     lda #$00
     ldy #$01
     ldx #$09
-    sty turn
-    sta countFrames
-    sty framesBlink
+    sty <turn
+    sta <countFrames
+    sty <framesBlink
 LoopReset:
     dex
-    sta simbols,x
+    sta <simbols,x
     bne LoopReset
     lda #$03
-    sta winner
+    sta <winner
     jsr AnyValidPosition
     jsr Play440
 OutResetGame:
@@ -529,7 +530,7 @@ OutResetGame:
 ;  Print string turn
 ;
 PrintTurnPlayer:
-    lda turn
+    lda <turn
     cmp #$03
     beq EndGame
     bit PPUSTATUS
@@ -548,7 +549,7 @@ LoopTurn:
     jsr PrintPlayerNumber
     rts
 EndGame:
-    lda winner
+    lda <winner
     cmp #$03
     beq Drawn
     jsr PrintPlayerWinner
@@ -568,7 +569,7 @@ PrintPlayerNumber:
     sta PPUADDR
     lda #$16
     clc 
-    adc turn
+    adc <turn
     sta PPUDATA
     lda #$00
     sta PPUDATA
@@ -592,7 +593,7 @@ LoopWinner:
     bcc LoopWinner
     lda #$16
     clc 
-    adc winner
+    adc <winner
     sta PPUDATA
     rts
     
