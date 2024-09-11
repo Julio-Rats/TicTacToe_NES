@@ -50,6 +50,7 @@ inputControl    .rs 2   ; Control Press by Player 0 and 1 (MSB-LSB)==>(A,B,SCL,S
 moveDirPonter   .rs 2   ; Pointer use for repeat same move (LSB,MSB) (Big Endian)
 simbols         .rs 9   ; vector contaim tile of ever positon of table game 
 turn            .rs 1   ; turn of P0 = 1, P1 = 2, Over = 3
+lastGameTurn    .rs 1   ; turn of P0 = 1, P1 = 2
 choose          .rs 1   ; Blank Position for next player start option
 winner          .rs 1   ; Winner P0 = 1, P1 = 2, Drawn = 3
 
@@ -121,6 +122,7 @@ WaitVblank2:
 ;============================= Set Variables =============================
     lda #$01
     sta <turn        ; Player 1 ever start
+    sta <lastGameTurn
     lda #$03
     sta <winner      ; Assuming a possible tie
 ;===================================================================
@@ -509,12 +511,15 @@ ResetEndGame:
     and #%00010000
     beq OutResetGame
 Reset:
+    lda <lastGameTurn
+    eor <turn
+    sta <turn 
+    sta <lastGameTurn
     lda #$00
-    ldy #$01
-    ldx #$09
-    sty <turn
     sta <countFrames
+    ldy #$01
     sty <framesBlink
+    ldx #$09
 LoopReset:
     dex
     sta <simbols,x
