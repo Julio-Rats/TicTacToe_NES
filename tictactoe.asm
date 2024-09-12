@@ -85,8 +85,8 @@ NMI:
     ;  Increment Count Frame and Decrement framesInput
     jsr ChangeCounts
     lda #$00
-    sta PPUADDR
-    sta PPUADDR
+    sta PPUSCROLL
+    sta PPUSCROLL
     rti
 
 ;=============================  Enter Point CPU  =============================
