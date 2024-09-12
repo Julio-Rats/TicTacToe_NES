@@ -10,15 +10,15 @@ BPMBLINK       = 3600/(BPM*2) ; bpm blink choose (3600/(BPM*2)), exemple (3600/1
 SPEEDREADINPUT = 10           ; frames to cooldown control input
 
 ;=============================  PPU Registers  =============================
-PPUCTRL   = $2000   ; Controller 
-PPUMASK   = $2001   ; Mask 
-PPUSTATUS = $2002   ; Status 
+PPUCTRL   = $2000   ; Controller
+PPUMASK   = $2001   ; Mask
+PPUSTATUS = $2002   ; Status
 OAMADDR	  = $2003   ; OAM address
 OAMDATA   = $2004   ; OAM data
-PPUSCROLL = $2005   ; Scroll 
-PPUADDR   = $2006   ; PPU Address 
-PPUDATA   = $2007   ; PPU Data 
-OAMDMA    = $4014   ; OAM DMA 
+PPUSCROLL = $2005   ; Scroll
+PPUADDR   = $2006   ; PPU Address
+PPUDATA   = $2007   ; PPU Data
+OAMDMA    = $4014   ; OAM DMA
 
 ;=============================  APU Registers  =============================
 ; Pulse Channel 1
@@ -43,12 +43,12 @@ APUFRMC       = $4017   ; Frame Counter
     .zp
 
 reserved        .rs 2   ; Reserved for nes use.
-countFrames     .rs 1   ; Counter number of frames 
+countFrames     .rs 1   ; Counter number of frames
 framesBlink     .rs 1   ; Next Number Frame for Blink (framesBlink = countFrames+#BPMBLINK)
 framesInput     .rs 1   ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
 inputControl    .rs 2   ; Control Press by Player 0 and 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
 moveDirPonter   .rs 2   ; Pointer use for repeat same move (LSB,MSB) (Big Endian)
-simbols         .rs 9   ; vector contaim tile of ever positon of table game 
+simbols         .rs 9   ; vector contaim tile of ever positon of table game
 turn            .rs 1   ; turn of P0 = 1, P1 = 2, Over = 3
 lastGameTurn    .rs 1   ; turn of P0 = 1, P1 = 2
 choose          .rs 1   ; Blank Position for next player start option
@@ -61,7 +61,7 @@ winner          .rs 1   ; Winner P0 = 1, P1 = 2, Drawn = 3
     .org $8000
 
 ;=============================  Non Maskable Interrupt   =============================
-;   Vblank generated a NMI(Non Maskable Interrupt), this period is used to 
+;   Vblank generated a NMI(Non Maskable Interrupt), this period is used to
 ;    modify sprites data and compute the game.
 ;===================================================================
 NMI:
@@ -76,14 +76,15 @@ NMI:
     jsr GetInputControl
     ; Move "cursor" in screen by input control
     jsr MoveChoosePlayer
-    ; Select choose 
+    ; Select choose
     jsr SetChoosePlayer
     ; Update Sprites (Blink, Position set, Game over, etc..)
-    jsr UpdateSprites 
+    jsr UpdateSprites
     ; Reset game after some winner
     jsr ResetEndGame
     ;  Increment Count Frame and Decrement framesInput
     jsr ChangeCounts
+    sta PPUSTATUS
     lda #$00
     sta PPUSCROLL
     sta PPUSCROLL
@@ -94,14 +95,12 @@ NMI:
 ;===================================================================
 Boot:
     sei
-    cld 
+    cld
     ; Set Stack Ponter
     ldx #$FF
     txs
     inx
-    ; Disable graphics and sound
-    stx PPUCTRL     ; No NMI Call
-    stx PPUMASK     ; No Rendering
+    ; Disable sound
     stx DMCIRQ      ; No Sound
     stx APUFRMC     ; No IRQ APU Flag
     ; Waint for new frame
@@ -142,11 +141,12 @@ WaitVblank2:
     lda #%10011111
     sta PULSE1CTRL
     sta PULSE2CTRL
-    ; Enable NMI in vblank and rendering sprites and backgrounds
-    lda #%10001000
-    sta PPUCTRL
+    ; Enable rendering sprites and backgrounds
     lda #%00011110
     sta PPUMASK
+    ; Enable NMI in VBlank
+    lda #%10001000
+    sta PPUCTRL
     ; Forever loop, do nothing, waint for a vblank and a NMI call
 ForeverLoop:
     nop
@@ -190,7 +190,7 @@ GetInputControl:
     sta <inputControl+1
     sta $4016
     lda #$00
-    sta $4016 
+    sta $4016
 LoopReadControl:
     lda $4016
     lsr a
@@ -214,7 +214,7 @@ LoopPrint:
     sta $0209,y
     sta $020D,y
     tya
-    clc 
+    clc
     adc #$10
     tay
     inx
@@ -257,7 +257,7 @@ BlinkChoose:
     lda <turn
     cmp #$03
     beq outBlinkChoose
-    lda <choose 
+    lda <choose
     cmp #$09
     beq outBlinkChoose
     lda <countFrames
@@ -275,7 +275,7 @@ outBlinkChoose:
 
 ;===================================================================
 ;  Select Choose Player
-;  
+;
 SetChoosePlayer:
     lda <framesInput
     beq SetTimeValid
@@ -305,7 +305,7 @@ outSetChoosePlayer:
 
 ;===================================================================
 ;  Move "cursor" do player
-;   
+;
 MoveChoosePlayer:
     lda <framesInput
     beq MoveTimeValid
@@ -369,7 +369,7 @@ MoveChoose:
     bcc OutChoosePlayer
     cpy #$09
     bcs OutChoosePlayer
-    lda simbols,y  
+    lda simbols,y
     beq ValidPosition
     jmp [moveDirPonter]
 ValidPosition:
@@ -390,7 +390,7 @@ VerifyWinner:
     pha
     lda <simbols
     beq LV2
-    ; line horizon 1    
+    ; line horizon 1
     cmp <simbols+1
     bne DiagMain
     cmp <simbols+2
@@ -488,7 +488,7 @@ LH3:   ; Line Horizon 3
     jmp OutVerifyGame
 OutVerifyGame:
     pla
-    ldx <turn 
+    ldx <turn
     cpx #$03
     bne OutWins
     ; Set a player winner
@@ -500,7 +500,7 @@ OutWins:
 ;===================================================================
 ;  Reset Game After Some Winner
 ;
-ResetEndGame: 
+ResetEndGame:
     lda <turn
     cmp #$03
     bne OutResetGame
@@ -513,7 +513,7 @@ ResetEndGame:
 Reset:
     lda <lastGameTurn
     eor <turn
-    sta <turn 
+    sta <turn
     sta <lastGameTurn
     lda #$00
     sta <countFrames
@@ -530,7 +530,7 @@ LoopReset:
     jsr Play440
 OutResetGame:
     rts
-    
+
 ;===================================================================
 ;  Print string turn
 ;
@@ -564,7 +564,7 @@ Drawn:
     rts
 
 ;===================================================================
-;  Print Number Player 
+;  Print Number Player
 ;
 PrintPlayerNumber:
     bit PPUSTATUS
@@ -573,7 +573,7 @@ PrintPlayerNumber:
     lda #$B5
     sta PPUADDR
     lda #$16
-    clc 
+    clc
     adc <turn
     sta PPUDATA
     lda #$00
@@ -597,11 +597,11 @@ LoopWinner:
     cpx #$0E
     bcc LoopWinner
     lda #$16
-    clc 
+    clc
     adc <winner
     sta PPUDATA
     rts
-    
+
 ;===================================================================
 ;  Print string of drawn
 ;
@@ -652,18 +652,18 @@ LoopCreated:
 ;  Print Grid (BackGround)
 ;
 PrintGrid:
-    ldx #$0E 
-    ldy #$02 
-    lda #$04 
+    ldx #$0E
+    ldy #$02
+    lda #$04
     sta PPUCTRL
     bit PPUSTATUS
     lda #$21
     sta PPUADDR
     lda #$0C
     sta PPUADDR
-    lda #$01 
+    lda #$01
 LoopColuns:
-    sta PPUDATA 
+    sta PPUDATA
     dex
     bne LoopColuns
     lda #$21
@@ -674,17 +674,17 @@ LoopColuns:
     ldx #$0E
     dey
     bne LoopColuns
-    lda #$00 
+    lda #$00
     sta PPUCTRL
-    ldx #$0E 
-    ldy #$02 
+    ldx #$0E
+    ldy #$02
     lda #$21
     sta PPUADDR
     lda #$88
     sta PPUADDR
-    lda #$02 
+    lda #$02
 LoopRows:
-    sta PPUDATA 
+    sta PPUDATA
     dex
     bne LoopRows
     lda #$22
@@ -694,7 +694,7 @@ LoopRows:
     lda #$02
     ldx #$0E
     dey
-    bne LoopRows  
+    bne LoopRows
     ldx #$03
     lda #$21
     sta PPUADDR
@@ -1065,7 +1065,7 @@ EndPalettes
 
 ;===================================================================
 ;===================================================================
-    .org $1000  
+    .org $1000
     ; Tile 0: Blank
     .defchr $00000000,\
             $00000000,\
