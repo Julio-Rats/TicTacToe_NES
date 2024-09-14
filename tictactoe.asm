@@ -130,6 +130,7 @@ WaitVblank2:
 ;   Load Sprites Palettes colors, and BackGrid (Grid Table)
     jsr LoadPalettes
     jsr LoadSprites
+    jsr LoadATtable
     jsr PrintGrid
     ; Take mid position
     lda #$04
@@ -720,8 +721,29 @@ LoopRows:
     lda #$31
     sta PPUADDR
     stx PPUDATA
-    jsr PrintCreated
-    rts
+    jmp PrintCreated
+    ; rts
+
+;===================================================================
+;  Load PPU attribute tables with zero (Palette 0)
+;
+LoadATtable:
+    sta PPUSTATUS
+    lda #$20
+    sta PPUADDR
+    lda #$00
+    sta PPUADDR
+
+    lda #$00
+    ldx #$00
+    ldy #$04
+LoopClear:
+    sta PPUDATA
+    dex
+    bne LoopClear
+    dey
+    bne LoopClear
+    rts 
 
 ;===================================================================
 ;  Sounds game
