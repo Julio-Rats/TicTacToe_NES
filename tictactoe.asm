@@ -84,6 +84,8 @@ NMI:
     jsr ResetEndGame
     ;  Increment Count Frame and Decrement framesInput
     jsr ChangeCounts
+    lda #%10001000
+    sta PPUCTRL
     sta PPUSTATUS
     lda #$00
     sta PPUSCROLL
@@ -129,8 +131,9 @@ WaitVblank2:
     jsr LoadPalettes
     jsr LoadSprites
     jsr PrintGrid
-    ; Take first position clear (this case first position table (new game))
-    jsr AnyValidPosition
+    ; Take mid position
+    lda #$04
+    sta choose
     ; Load DMA for input sprites inside VRAM (PPU Memory)
     lda #$02
     sta OAMDMA
@@ -526,7 +529,8 @@ LoopReset:
     bne LoopReset
     lda #$03
     sta <winner
-    jsr AnyValidPosition
+    lda #$04
+    sta choose
     jsr Play440
 OutResetGame:
     rts
