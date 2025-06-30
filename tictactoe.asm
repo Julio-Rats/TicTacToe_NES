@@ -13,7 +13,7 @@ SPEEDREADINPUT = 10           ; frames to cooldown control input
 PPUCTRL   = $2000   ; Controller
 PPUMASK   = $2001   ; Mask
 PPUSTATUS = $2002   ; Status
-OAMADDR	  = $2003   ; OAM address
+OAMADDR   = $2003   ; OAM address
 OAMDATA   = $2004   ; OAM data
 PPUSCROLL = $2005   ; Scroll
 PPUADDR   = $2006   ; PPU Address
@@ -35,24 +35,30 @@ PULSE2HFT     = $4007   ; Pulse 2 High bit Frequency
 DMCIRQ        = $4010   ; DMC IRQ Enable
 ; Others Uses
 APUCTRL       = $4015   ; Control and Status
-APUFRMC       = $4017   ; Frame Counter
+APUFRMC       = $4017   ; APU Frame Counter
 
 ;=============================  variables   =============================
-; Variaveis (RAM Interna do NES)
+; Variables (NES Internal RAM)
 ; ---> Zero Page used here ! $00--$FF (256 Bytes Free RAM) <---
     .zp
 
-reserved        .rs 2   ; Reserved for nes use.
-countFrames     .rs 1   ; Counter number of frames
-framesBlink     .rs 1   ; Next Number Frame for Blink (framesBlink = countFrames+#BPMBLINK)
-framesInput     .rs 1   ; Next Number Frame for Input (framesInput = countFrames+#BPMBLINK)
-inputControl    .rs 2   ; Control Press by Player 0 and 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
-moveDirPonter   .rs 2   ; Pointer use for repeat same move (LSB,MSB) (Big Endian)
-simbols         .rs 9   ; vector contaim tile of ever positon of table game
-turn            .rs 1   ; turn of P0 = 1, P1 = 2, Over = 3
-lastGameTurn    .rs 1   ; turn of P0 = 1, P1 = 2
-choose          .rs 1   ; Blank Position for next player start option
-winner          .rs 1   ; Winner P0 = 1, P1 = 2, Drawn = 3
+framesToBlink    .ds 1   ; Number of Frames to Toggle Blink (framesToBlink = #BPMBLINK)
+coolDownInput    .ds 1   ; Number of Frames Input Cooldown  (coolDownInput = #SPEEDREADINPUT)
+inputControl     .ds 2   ; Control Press by Player 0 and 1 (MSB-LSB)==>(A,B,SCL,STRT,UP,DOWN,LEFT,RIGHT)
+moveDirPonter    .ds 2   ; Pointer use for repeat same move (LSB,MSB) (Big Endian)
+simbols          .ds 9   ; vector contaim tile of ever positon of table game
+turn             .ds 1   ; turn of P0 = 1, P1 = 2, Over = 3
+lastGameTurn     .ds 1   ; turn of P0 = 1, P1 = 2
+choose           .ds 1   ; Blank Position for next player start option
+winner           .ds 1   ; Winner P0 = 1, P1 = 2, Drawn = 3
+mutexNMIClear    .ds 1   ; Mutex to synchronize NMI
+flagBGChange     .ds 1   ; Flag indicator BG change
+flagSpriteChange .ds 1   ; Flag indicator Sprite change
+
+; RAM section ($0200-$07FF):
+    .bss
+
+BufferDMA        .ds 256 ; DMA Buffer $0200 -- $02FF (256 Bytes / 64 Sprites)
 
 ;=============================  Code Segment   =============================
     .code
@@ -62,64 +68,95 @@ winner          .rs 1   ; Winner P0 = 1, P1 = 2, Drawn = 3
 
 ;=============================  Non Maskable Interrupt   =============================
 ;   Vblank generated a NMI(Non Maskable Interrupt), this period is used to
-;    modify sprites data and compute the game.
+;    modify sprites data and PPU VRAM.
 ;===================================================================
 NMI:
+    ; Save Registers in Possible Race Condition
+    pha
+    tya
+    pha
+    txa
+    pha
+
     ; Call DMA-Sprite
-    lda #$02
+    lda #high(BufferDMA)
     sta OAMDMA
+
+    ; Check if there was a shift change using Sync Flag
+    lda <flagBGChange
+    bne noTurnChange
+    ; Indicates synchronization that has already consumed the turn change
+    inc <flagBGChange
     ; Print string of turn player
     jsr PrintTurnPlayer
-    ; Blink the selected position to play
-    jsr BlinkChoose
-    ; Get Input Control Players.
-    jsr GetInputControl
-    ; Move "cursor" in screen by input control
-    jsr MoveChoosePlayer
-    ; Select choose
-    jsr SetChoosePlayer
-    ; Update Sprites (Blink, Position set, Game over, etc..)
-    jsr UpdateSprites
-    ; Reset game after some winner
-    jsr ResetEndGame
-    ;  Increment Count Frame and Decrement framesInput
-    jsr ChangeCounts
+noTurnChange:
+
+    lda #$00
+    ; is not zero, the process of starting sprite evaluation triggers
+    ;  an OAM hardware refresh bug that causes the 8 bytes beginning
+    ;  at OAMADDR & $F8 to be copied and replace the first 8 bytes of OAM.
+    sta OAMADDR
+    bit PPUSTATUS
+    ; The PPU scroll registers share internal state with the PPU address registers.
+    ; Because of this, PPUSCROLL and the nametable bits in PPUCTRL should be written
+    ;  after any writes to PPUADDR.
+    ; No Scroll Screen
+    sta PPUSCROLL
+    sta PPUSCROLL
+    ; Enable NMI in VBlank
     lda #%10001000
     sta PPUCTRL
-    sta PPUSTATUS
-    lda #$00
-    sta PPUSCROLL
-    sta PPUSCROLL
+
+    ; Free Mutex
+    inc <mutexNMIClear
+    ; Restore Registers in Possible Race Condition
+    pla
+    tax
+    pla
+    tay
+    pla
+    ; End of NMI
     rti
 
 ;=============================  Enter Point CPU  =============================
 ;   Boot game, this is enter point of CPU (start of code game)
 ;===================================================================
 Boot:
+    ; Ignore IRQs
     sei
     cld
+    ; Disable sound
+    ldx #$40
+    stx APUFRMC      ; Set IRQ APU Flag
     ; Set Stack Ponter
     ldx #$FF
     txs
+    txa              ; x==$FF --> a:=x
     inx
-    ; Disable sound
-    stx DMCIRQ      ; No Sound
-    stx APUFRMC     ; No IRQ APU Flag
-    ; Waint for new frame
+    ; Safe Code for Resets -- PPU disabled
+    stx PPUMASK
+    stx PPUCTRL
+    stx DMCIRQ       ; disable DMC IRQs
+    ; Race condition
+    ;  The vblank flag is in an unknown state after reset,
+    ;  so it is cleared here to make sure that WaitVblank1:
+    ;  does not exit immediately.
+    bit PPUSTATUS
 WaitVblank1:
     bit PPUSTATUS
     bpl WaitVblank1
     ; Clear Memory Inside NES ($0000-$07FF) Mirrored to ($0800-$1FFF) (Only Used in Game)
-    lda #$00
+    ldy #$00
 ClearMemory:
-    sta $0000,x ; zero page
-    sta $0200,x ; sprites memory
+    sty <$00,x       ; zero page
+    sta BufferDMA,x  ; OAM Buffer RAM
     inx
     bne ClearMemory
-    ; Waint again for new frame
+    ; Waint again for complete frame
 WaitVblank2:
     bit PPUSTATUS
     bpl WaitVblank2
+
 ;============================= Set Variables =============================
     lda #$01
     sta <turn        ; Player 1 ever start
@@ -127,16 +164,17 @@ WaitVblank2:
     lda #$03
     sta <winner      ; Assuming a possible tie
 ;===================================================================
-;   Load Sprites Palettes colors, and BackGrid (Grid Table)
+
+    ; Load Sprites Palettes colors, and BackGrid (Grid Table)
     jsr LoadPalettes
     jsr LoadSprites
     jsr LoadATtable
     jsr PrintGrid
-    ; Take mid position
+    ; Start in Center Position
     lda #$04
     sta choose
-    ; Load DMA for input sprites inside VRAM (PPU Memory)
-    lda #$02
+    ; Load DMA for input sprites inside VRAM (OAM Primary Memory)
+    lda #high(BufferDMA)
     sta OAMDMA
     ; Enable APU
     lda #%00000011
@@ -145,15 +183,54 @@ WaitVblank2:
     lda #%10011111
     sta PULSE1CTRL
     sta PULSE2CTRL
-    ; Enable rendering sprites and backgrounds
+    ; No Scroll Screen
+    lda #$00
+    bit PPUSTATUS
+    sta PPUSCROLL
+    sta PPUSCROLL
+    ; Enable Rendering Sprites and Backgrounds
     lda #%00011110
     sta PPUMASK
     ; Enable NMI in VBlank
     lda #%10001000
     sta PPUCTRL
-    ; Forever loop, do nothing, waint for a vblank and a NMI call
+
+    ; Forever loop, Logic game, waint for a Vblank and NMI call
 ForeverLoop:
-    nop
+    ; Mutex to synchronize data change after NMI
+    lda <mutexNMIClear
+waitNMIMutex:
+    cmp <mutexNMIClear
+    beq waitNMIMutex
+
+    ; Get Input Control Players
+    jsr GetInputControl
+
+    lda <turn
+    cmp #$03
+    bne noEndGame
+    ; Reset game after some winner
+    jsr ResetEndGame
+    jmp jmpEndGame
+noEndGame:
+    ; Blink the selected position to play
+    jsr BlinkChoose
+    ; Move "cursor" in screen by input control
+    jsr MoveChoosePlayer
+    ; Select choose
+    jsr SetChoosePlayer
+jmpEndGame:
+
+    lda <flagSpriteChange
+    beq noChangeSprites
+    dec <flagSpriteChange
+    ; Update Sprites (Blink, Position set, Game over, etc..)
+    jsr UpdateSprites
+noChangeSprites:
+
+    ; Increment Count Frame and Decrement coolDownInput
+    jsr ChangeCounts
+
     jmp ForeverLoop
 
 ;===================================================================
@@ -163,27 +240,30 @@ LoadPalettes:
     bit PPUSTATUS
     lda #$3F
     sta PPUADDR
-    ldx #$00
-    stx PPUADDR
+    lda #$00
+    sta PPUADDR
+    ldy #$08
+nextPalette:
+    ldx #$04
 loopPalettes:
-    lda Palettes,x
+    lda Palettes-1,x
     sta PPUDATA
-    inx
-    cpx #(EndPalettes-Palettes)
+    dex
     bne loopPalettes
+    dey
+    bne nextPalette
     rts
 
 ;===================================================================
 ;   Load Sprites
 ;
 LoadSprites:
-    ldx #$00
-LoopSprites:
-    lda Sprites,x
-    sta $0200,x
-    inx
-    cpx #(EndSprites-Sprites)
-    bne LoopSprites
+    ldx #(EndSprites-Sprites)
+loopSprites:
+    lda Sprites-1,x
+    sta BufferDMA-1,x
+    dex
+    bne loopSprites
     rts
 
 ;===================================================================
@@ -191,39 +271,40 @@ LoopSprites:
 ;
 GetInputControl:
     lda #$01
+    sta $4016
     sta <inputControl+1
-    sta $4016
-    lda #$00
-    sta $4016
-LoopReadControl:
-    lda $4016
     lsr a
+    sta $4016
+loopReadControl:
+    lda $4016
+    and #$03
+    cmp #$01
     rol <inputControl
     lda $4017
-    lsr a
+    and #$03
+    cmp #$01
     rol <inputControl+1
-    bcc LoopReadControl
+    bcc loopReadControl
     rts
 
 ;===================================================================
 ;  Update Sprites (Modify DMA zone $0200-$02FF)
 ;
 UpdateSprites:
-    ldy #$00
-    ldx #$00
-LoopPrint:
-    lda <simbols,x
-    sta $0201,y
-    sta $0205,y
-    sta $0209,y
-    sta $020D,y
+    ldy #$80
+    ldx #$09
+loopPrint:
+    lda <simbols-1,x
+    sta BufferDMA+1,y
+    sta BufferDMA+5,y
+    sta BufferDMA+9,y
+    sta BufferDMA+13,y
     tya
-    clc
-    adc #$10
+    sec
+    sbc #$10
     tay
-    inx
-    cpx #$09
-    bne LoopPrint
+    dex
+    bne loopPrint
     rts
 
 ;===================================================================
@@ -231,49 +312,49 @@ LoopPrint:
 ;
 AnyValidPosition:
     ldx #$00
-LoopFirstClear:
+loopFirstClear:
     lda <simbols,x
-    beq Found
+    beq found
     inx
     cpx #$09
-    bne LoopFirstClear
+    bne loopFirstClear
     lda #$03
     sta <turn
-Found:
+found:
     stx <choose
     rts
 
 ;===================================================================
-;  Increment Count Frame and Decrement framesInput
+;  Decrement Frame Counters
 ;
 ChangeCounts:
-    inc <countFrames
-    lda <framesInput
-    beq NoDecInput
-    dec <framesInput
-NoDecInput:
+    lda <framesToBlink
+    beq noDecBlink
+    dec <framesToBlink
+noDecBlink:
+    lda <coolDownInput
+    beq noDecInput
+    dec <coolDownInput
+noDecInput:
     rts
 
 ;===================================================================
 ;  blink sprite select position player (select position)
 ;
 BlinkChoose:
-    lda <turn
-    cmp #$03
-    beq outBlinkChoose
     lda <choose
     cmp #$09
     beq outBlinkChoose
-    lda <countFrames
-    cmp <framesBlink
+    lda <framesToBlink
     bne outBlinkChoose
-    clc
-    adc #BPMBLINK
-    sta <framesBlink
+    lda #BPMBLINK
+    sta <framesToBlink
     ldx <choose
     lda <simbols,x
     eor <turn
     sta <simbols,x
+    ; Flag to Change Sprites enable
+    inc <flagSpriteChange
 outBlinkChoose:
     rts
 
@@ -281,15 +362,10 @@ outBlinkChoose:
 ;  Select Choose Player
 ;
 SetChoosePlayer:
-    lda <framesInput
-    beq SetTimeValid
-    jmp outSetChoosePlayer
-SetTimeValid:
+    lda <coolDownInput
+    bne outSetChoosePlayer
     ldx <turn
-    cpx #$03
-    beq outSetChoosePlayer
-    dex
-    lda <inputControl,x
+    lda <inputControl-1,x
     and #%10000000
     beq outSetChoosePlayer
     ldy <choose
@@ -302,8 +378,12 @@ SetTimeValid:
     ; Get new blank position
     jsr AnyValidPosition
     lda #SPEEDREADINPUT
-    sta <framesInput
-    jsr Play440
+    sta <coolDownInput
+    ; Flag to Change Sprites enable
+    inc <flagSpriteChange
+    ; Indicates to NMI synchronization that there is a shift change to process
+    dec <flagBGChange
+    jmp Play440
 outSetChoosePlayer:
     rts
 
@@ -311,79 +391,79 @@ outSetChoosePlayer:
 ;  Move "cursor" do player
 ;
 MoveChoosePlayer:
-    lda <framesInput
-    beq MoveTimeValid
-    jmp OutChoosePlayer
-MoveTimeValid:
+    lda <coolDownInput
+    bne outChoosePlayer
     ldy <choose
     cpy #$09
-    beq OutChoosePlayer
+    beq outChoosePlayer
     ldx <turn
-    cpx #$03
-    beq OutChoosePlayer
     dex
     lda <inputControl,x
     and #%00001000        ; UP
-    beq TryDown
-    lda #low(Up)
+    beq tryDown
+    lda #low(up)
     sta <moveDirPonter
-    lda #high(Up)
+    lda #high(up)
     sta <moveDirPonter+1
-Up:
+up:
     dey
     dey
     dey
-    jmp MoveChoose
-TryDown:
+    jmp moveChoose
+tryDown:
     lda <inputControl,x
     and #%00000100        ; DOWN
-    beq TryLeft
-    lda #low(Down)
+    beq tryLeft
+    lda #low(down)
     sta <moveDirPonter
-    lda #high(Down)
+    lda #high(down)
     sta <moveDirPonter+1
-Down:
+down:
     iny
     iny
     iny
-    jmp MoveChoose
-TryLeft:
+    jmp moveChoose
+tryLeft:
     lda <inputControl,x
     and #%00000010        ; LEFT
-    beq TryRight
-    lda #low(Left)
+    beq tryRight
+    lda #low(left)
     sta <moveDirPonter
-    lda #high(Left)
+    lda #high(left)
     sta <moveDirPonter+1
-Left:
+left:
     dey
-    jmp MoveChoose
-TryRight:
+    jmp moveChoose
+tryRight:
     lda <inputControl,x
     and #%00000001        ; RIGHT
-    beq OutChoosePlayer
-    lda #low(Right)
+    beq outChoosePlayer
+    lda #low(right)
     sta <moveDirPonter
-    lda #high(Right)
+    lda #high(right)
     sta <moveDirPonter+1
-Right:
+right:
     iny
-MoveChoose:
+moveChoose:
     cpy #$00
-    bcc OutChoosePlayer
+    bcc outChoosePlayer
     cpy #$09
-    bcs OutChoosePlayer
+    bcs outChoosePlayer
     lda simbols,y
-    beq ValidPosition
+    beq validPosition
     jmp [moveDirPonter]
-ValidPosition:
+validPosition:
     ldx <choose
     sta <simbols,x
     sty <choose
     lda #SPEEDREADINPUT
-    sta <framesInput
-    jsr Play220
-OutChoosePlayer:
+    sta <coolDownInput
+    lda #$00
+    sta <framesToBlink
+    ; Flag to Change Sprites enable
+    inc <flagSpriteChange
+    jmp Play220
+outChoosePlayer:
     rts
 
 ;===================================================================
@@ -404,7 +484,7 @@ VerifyWinner:
     sta <simbols
     sta <simbols+1
     sta <simbols+2
-    jmp OutVerifyGame
+    jmp outVerifyGame
 DiagMain:  ; diagonal main
     cmp <simbols+4
     bne LV1
@@ -415,7 +495,7 @@ DiagMain:  ; diagonal main
     sta <simbols
     sta <simbols+4
     sta <simbols+8
-    jmp OutVerifyGame
+    jmp outVerifyGame
 LV1:    ; Line Vertical 1
     cmp <simbols+3
     bne LV2
@@ -426,7 +506,7 @@ LV1:    ; Line Vertical 1
     sta <simbols
     sta <simbols+3
     sta <simbols+6
-    jmp OutVerifyGame
+    jmp outVerifyGame
 LV2:    ; Line Vertical 2
     lda <simbols+1
     beq LV3
@@ -439,7 +519,7 @@ LV2:    ; Line Vertical 2
     sta <simbols+1
     sta <simbols+4
     sta <simbols+7
-    jmp OutVerifyGame
+    jmp outVerifyGame
 LV3:    ; Line Vertical 2
     lda <simbols+2
     beq LH2
@@ -452,7 +532,7 @@ LV3:    ; Line Vertical 2
     sta <simbols+2
     sta <simbols+5
     sta <simbols+8
-    jmp OutVerifyGame
+    jmp outVerifyGame
 DiagSec:    ; Diagonal Secondary
     cmp <simbols+4
     bne LH2
@@ -463,7 +543,7 @@ DiagSec:    ; Diagonal Secondary
     sta <simbols+2
     sta <simbols+4
     sta <simbols+6
-    jmp OutVerifyGame
+    jmp outVerifyGame
 LH2:    ; Line Horizon 2
     lda <simbols+3
     beq LH3
@@ -476,64 +556,63 @@ LH2:    ; Line Horizon 2
     sta <simbols+3
     sta <simbols+4
     sta <simbols+5
-    jmp OutVerifyGame
+    jmp outVerifyGame
 LH3:   ; Line Horizon 3
     lda <simbols+6
-    beq OutVerifyGame
+    beq outVerifyGame
     cmp <simbols+7
-    bne OutVerifyGame
+    bne outVerifyGame
     cmp <simbols+8
-    bne OutVerifyGame
+    bne outVerifyGame
     lda #$03
     sta <turn
     sta <simbols+6
     sta <simbols+7
     sta <simbols+8
-    jmp OutVerifyGame
-OutVerifyGame:
+    jmp outVerifyGame
+outVerifyGame:
     pla
     ldx <turn
     cpx #$03
-    bne OutWins
+    bne outWins
     ; Set a player winner
     eor #$03
     sta <winner
-OutWins:
+outWins:
     rts
 
 ;===================================================================
 ;  Reset Game After Some Winner
 ;
 ResetEndGame:
-    lda <turn
-    cmp #$03
-    bne OutResetGame
     lda <inputControl
     and #%00010000
-    bne Reset
+    bne reset
     lda <inputControl+1
     and #%00010000
-    beq OutResetGame
-Reset:
+    beq outResetGame
+reset:
     lda <lastGameTurn
     eor <turn
     sta <turn
     sta <lastGameTurn
     lda #$00
-    sta <countFrames
-    ldy #$01
-    sty <framesBlink
+    sta <framesToBlink
     ldx #$09
-LoopReset:
+loopReset:
     dex
     sta <simbols,x
-    bne LoopReset
+    bne loopReset
     lda #$03
     sta <winner
     lda #$04
     sta choose
-    jsr Play440
-OutResetGame:
+    ; Flag to Change Sprites enable
+    inc <flagSpriteChange
+    ; Indicates to NMI synchronization that there is a shift change to process
+    dec <flagBGChange
+    jmp Play440
+outResetGame:
     rts
 
 ;===================================================================
@@ -542,48 +621,35 @@ OutResetGame:
 PrintTurnPlayer:
     lda <turn
     cmp #$03
-    beq EndGame
+    beq endGame
     bit PPUSTATUS
     lda #$20
     sta PPUADDR
     lda #$A8
     sta PPUADDR
-    ldx #$00
-    stx PPUDATA
-LoopTurn:
-    lda StringTurn,x
+    lda #$00
     sta PPUDATA
-    inx
-    cpx #$0C
-    bcc LoopTurn
-    jsr PrintPlayerNumber
-    rts
-EndGame:
-    lda <winner
-    cmp #$03
-    beq Drawn
-    jsr PrintPlayerWinner
-    rts
-Drawn:
-    jsr PrintDrawn
-    rts
-
-;===================================================================
-;  Print Number Player
-;
-PrintPlayerNumber:
-    bit PPUSTATUS
-    lda #$20
-    sta PPUADDR
-    lda #$B5
-    sta PPUADDR
+    ldx #$0C
+loopTurn:
+    lda StringTurn-1,x
+    sta PPUDATA
+    dex
+    bne loopTurn
     lda #$16
     clc
     adc <turn
     sta PPUDATA
-    lda #$00
-    sta PPUDATA
+    stx PPUDATA
     rts
+endGame:
+    lda <winner
+    cmp #$03
+    beq drawn
+    jmp PrintPlayerWinner
+    ; rts
+drawn:
+    jmp PrintDrawn
+    ; rts
 
 ;===================================================================
 ;  Print string Winner
@@ -594,13 +660,12 @@ PrintPlayerWinner:
     sta PPUADDR
     lda #$A8
     sta PPUADDR
-    ldx #$00
-LoopWinner:
-    lda StringWinner,X
+    ldx #$0E
+loopWinner:
+    lda StringWinner-1,X
     sta PPUDATA
-    inx
-    cpx #$0E
-    bcc LoopWinner
+    dex
+    bne loopWinner
     lda #$16
     clc
     adc <winner
@@ -614,20 +679,19 @@ PrintDrawn:
     bit PPUSTATUS
     lda #$20
     sta PPUADDR
-    lda #$A8
+    lda #$A9
     sta PPUADDR
-    ldx #$00
-    stx PPUDATA
-    stx PPUDATA
-LoopDrawn:
-    lda StringDrawn,x
-    sta PPUDATA
-    inx
-    cpx #$0A
-    bcc LoopDrawn
     lda #$00
     sta PPUDATA
     sta PPUDATA
+    ldx #$0A
+loopDrawn:
+    lda StringDrawn-1,x
+    sta PPUDATA
+    dex
+    bne loopDrawn
+    stx PPUDATA
+    stx PPUDATA
     rts
 
 ;===================================================================
@@ -637,20 +701,17 @@ PrintCreated:
     bit PPUSTATUS
     lda #$23
     sta PPUADDR
-    lda #$23
+    lda #$24
     sta PPUADDR
-    ldx #$00
-    stx PPUDATA
-    stx PPUDATA
-LoopCreated:
-    lda StringCreated,x
-    sta PPUDATA
-    inx
-    cpx #$14
-    bcc LoopCreated
     lda #$00
     sta PPUDATA
     sta PPUDATA
+    ldx #$14
+loopCreated:
+    lda StringCreated-1,x
+    sta PPUDATA
+    dex
+    bne loopCreated
     rts
 
 ;===================================================================
@@ -659,66 +720,68 @@ LoopCreated:
 PrintGrid:
     ldx #$0E
     ldy #$02
+    ; PPUADDR 32 bytes increment
     lda #$04
     sta PPUCTRL
     bit PPUSTATUS
     lda #$21
     sta PPUADDR
-    lda #$0C
+    lda #$0D
     sta PPUADDR
     lda #$01
-LoopColuns:
+loopColuns:
     sta PPUDATA
     dex
-    bne LoopColuns
+    bne loopColuns
     lda #$21
     sta PPUADDR
-    lda #$11
+    lda #$12
     sta PPUADDR
     lda #$01
     ldx #$0E
     dey
-    bne LoopColuns
+    bne loopColuns
+    ; PPUADDR 1 bytes increment
     lda #$00
     sta PPUCTRL
     ldx #$0E
     ldy #$02
     lda #$21
     sta PPUADDR
-    lda #$88
+    lda #$89
     sta PPUADDR
     lda #$02
-LoopRows:
+loopRows:
     sta PPUDATA
     dex
-    bne LoopRows
+    bne loopRows
     lda #$22
     sta PPUADDR
-    lda #$28
+    lda #$29
     sta PPUADDR
     lda #$02
     ldx #$0E
     dey
-    bne LoopRows
+    bne loopRows
     ldx #$03
     lda #$21
     sta PPUADDR
-    lda #$8C
+    lda #$8D
     sta PPUADDR
     stx PPUDATA
     lda #$21
     sta PPUADDR
-    lda #$91
+    lda #$92
     sta PPUADDR
     stx PPUDATA
     lda #$22
     sta PPUADDR
-    lda #$2C
+    lda #$2D
     sta PPUADDR
     stx PPUDATA
     lda #$22
     sta PPUADDR
-    lda #$31
+    lda #$32
     sta PPUADDR
     stx PPUDATA
     jmp PrintCreated
@@ -728,7 +791,7 @@ LoopRows:
 ;  Load PPU attribute tables with zero (Palette 0)
 ;
 LoadATtable:
-    sta PPUSTATUS
+    bit PPUSTATUS
     lda #$20
     sta PPUADDR
     lda #$00
@@ -737,13 +800,13 @@ LoadATtable:
     lda #$00
     ldx #$00
     ldy #$04
-LoopClear:
+loopClear:
     sta PPUDATA
     dex
-    bne LoopClear
+    bne loopClear
     dey
-    bne LoopClear
-    rts 
+    bne loopClear
+    rts
 
 ;===================================================================
 ;  Sounds game
@@ -766,50 +829,54 @@ Play440:
 ;  Print Grid (BackGround)
 ;
 Sprites:
-    .byte 80,0,%10000000,74
-    .byte 80,0,%11000000,82
-    .byte 72,0,%00000000,74
-    .byte 72,0,%01000000,82
+    .byte 72,0,%01000000,90
+    .byte 72,0,%00000000,82
+    .byte 80,0,%11000000,90
+    .byte 80,0,%10000000,82
 
-    .byte 80,0,%10000000,112
-    .byte 80,0,%11000000,120
-    .byte 72,0,%00000000,112
-    .byte 72,0,%01000000,120
+    .byte 72,0,%01000000,128
+    .byte 72,0,%00000000,120
+    .byte 80,0,%11000000,128
+    .byte 80,0,%10000000,120
 
-    .byte 80,0,%10000000,152
-    .byte 80,0,%11000000,160
-    .byte 72,0,%00000000,152
-    .byte 72,0,%01000000,160
+    .byte 72,0,%01000000,168
+    .byte 72,0,%00000000,160
+    .byte 80,0,%11000000,168
+    .byte 80,0,%10000000,160
+
     ;
-    .byte 118,0,%10000000,74
-    .byte 118,0,%11000000,82
-    .byte 110,0,%00000000,74
-    .byte 110,0,%01000000,82
 
-    .byte 118,0,%10000000,112
-    .byte 118,0,%11000000,120
-    .byte 110,0,%00000000,112
-    .byte 110,0,%01000000,120
+    .byte 110,0,%01000000,90
+    .byte 110,0,%00000000,82
+    .byte 118,0,%11000000,90
+    .byte 118,0,%10000000,82
 
-    .byte 118,0,%10000000,152
-    .byte 118,0,%11000000,160
-    .byte 110,0,%00000000,152
-    .byte 110,0,%01000000,160
+    .byte 110,0,%01000000,128
+    .byte 110,0,%00000000,120
+    .byte 118,0,%11000000,128
+    .byte 118,0,%10000000,120
+
+    .byte 110,0,%01000000,168
+    .byte 110,0,%00000000,160
+    .byte 118,0,%11000000,168
+    .byte 118,0,%10000000,160
+
     ;
-    .byte 158,0,%10000000,74
-    .byte 158,0,%11000000,82
-    .byte 150,0,%00000000,74
-    .byte 150,0,%01000000,82
 
-    .byte 158,0,%10000000,112
-    .byte 158,0,%11000000,120
-    .byte 150,0,%00000000,112
-    .byte 150,0,%01000000,120
+    .byte 150,0,%01000000,90
+    .byte 150,0,%00000000,82
+    .byte 158,0,%11000000,90
+    .byte 158,0,%10000000,82
 
-    .byte 158,0,%10000000,152
-    .byte 158,0,%11000000,160
-    .byte 150,0,%00000000,152
-    .byte 150,0,%01000000,160
+    .byte 150,0,%01000000,128
+    .byte 150,0,%00000000,120
+    .byte 158,0,%11000000,128
+    .byte 158,0,%10000000,120
+
+    .byte 150,0,%01000000,168
+    .byte 150,0,%00000000,160
+    .byte 158,0,%11000000,168
+    .byte 158,0,%10000000,160
 EndSprites:
     ; Label used for auto calculate bytes for write in memory := (EndSprites-Sprites) Bytes
 
@@ -817,44 +884,27 @@ EndSprites:
 ;  String msgs
 ;
 StringTurn:
-    .byte 19,20,17,14,0,16,12,4,22,8,17,0       ; "TURN PLAYER "
+    .byte 0,17,8,22,4,12,16,0,14,17,20,19       ; "TURN PLAYER "
 StringWinner:
-    .byte 21,10,14,14,8,17,0,16,12,4,22,8,17,0  ; "WINNER PLAYER "
+    .byte 0,17,8,22,4,12,16,0,17,8,14,14,10,21  ; "WINNER PLAYER "
 StringDrawn:
-    .byte 7,17,4,21,14,0,9,4,13,8               ; "DRAWN GAME"
+    .byte 8,13,4,9,0,14,21,4,17,7               ; "DRAWN GAME"
 StringCreated:
-    .byte 6,17,8,4,19,8,7,0,5,22,0,11,20,12,10,15,17,4,19,18 ; "CREATED BY JULIORATS"
+    .byte 18,19,4,17,15,10,12,20,11,0,22,5,0,7,8,19,4,8,17,6 ; "CREATED BY JULIORATS"
 
 ;===================================================================
 ;  Palettes Color data
 ;
 Palettes:
-    .byte $0F
-    .byte $30, $0F, $0F
-    .byte $0F
-    .byte $30, $0F, $0F
-    .byte $0F
-    .byte $30, $0F, $0F
-    .byte $0F
-    .byte $30, $0F, $0F
-
-    .byte $0F
-    .byte $30, $0F, $0F
-    .byte $0F
-    .byte $30, $0F, $0F
-    .byte $0F
-    .byte $30, $0F, $0F
-    .byte $0F
-    .byte $30, $0F, $0F
-EndPalettes
+    .byte $0F,$0F,$30,$0F
 
 ;===================================================================
 ;  Bank of vectors input address memory
 ;
     .bank 1
-    .org $FFFA
+    .org $BFFA
 
-    .dw NMI     ; Non Maskable Interrupt
+    .dw NMI     ; Non-Maskable Interrupt (NMI)
     .dw Boot    ; Enter Point Address Code
 
 ;===================================================================
